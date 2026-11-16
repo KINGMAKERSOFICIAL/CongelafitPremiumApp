@@ -198,7 +198,6 @@ export function Recipe() {
                 <Icon name="utensils" size={15} /> Rende
               </span>
               <b>{rendeText ?? '—'}</b>
-              {r.portion && <span className="sub">porção: {r.portion}</span>}
             </div>
             <div className="stat">
               <span className="lab">
@@ -313,15 +312,6 @@ export function Recipe() {
         </section>
       </div>
 
-      {r.tip && (
-        <aside className="recipe-tip">
-          <Icon name="info" size={18} />
-          <p>
-            <b>Dica CongelaFit.</b> {r.tip}
-          </p>
-        </aside>
-      )}
-
       <section className={`freeze-card ${rule.verdict}`} aria-labelledby="h-fz">
         <div className="freeze-head">
           <Icon name="snow" size={22} />
@@ -353,15 +343,9 @@ export function Recipe() {
           {rule.note}
         </p>
         <p className="small">
-          {rule.reheat ? (
-            <>
-              <b>Para servir.</b> {rule.reheat}
-            </>
-          ) : rule.serve === 'reheat' ? (
-            'Descongele na geladeira e reaqueça até 74 °C no centro (sopas e molhos: até ferver).'
-          ) : (
-            'Descongele na geladeira e sirva gelado ou em temperatura ambiente.'
-          )}{' '}
+          {rule.serve === 'reheat'
+            ? 'Descongele na geladeira e reaqueça até 74 °C no centro (sopas e molhos: até ferver).'
+            : 'Descongele na geladeira e sirva gelado ou em temperatura ambiente.'}{' '}
           <Link to="/guias/validade">Ver prazos por categoria</Link>
         </p>
       </section>

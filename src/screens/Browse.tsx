@@ -76,7 +76,7 @@ export function Browse() {
   return (
     <div className="page home">
       <section className="hero">
-        <p className="eyebrow">Low Carb, Lanches e Doces Saudáveis</p>
+        <p className="eyebrow">Receitas Low Carb · Livro completo</p>
         <h1>{RECIPES.length} receitas, com foto, calorias e passo a passo</h1>
         <Link to="/favoritos" className="hero-link">
           <Icon name="heart" size={16} /> Minhas favoritas ({fav.list.length})

@@ -566,7 +566,7 @@ const SECTION_RULES: [string, RegExp][] = [
       'azeite|oleo|vinagre|shoyu|molho|mostarda|ketchup|maionese|pesto|extrato de tomate|tomate (pelado|seco|em lata|em conserva)|passata|polpa de tomate|azeitona|palmito|alcaparra|picle|pepino em conserva|atum|sardinha|milho verde|ervilha em lata|geleia|caldo|tahine|tahini|pasta de tomate|pasta de pimentao|miso|salmoura|creme de cebola',
     ),
   ],
-  ['padaria', w('pao|baguete|baguetinha|tortilha|wrap|rap10|torrada|bisnaguinha|massa folhada')],
+  ['padaria', w('pao|tortilha|wrap|rap10|torrada|bisnaguinha|massa folhada')],
   [
     'congelados',
     w(
@@ -594,7 +594,7 @@ const SECTION_RULES: [string, RegExp][] = [
   [
     'mercearia',
     w(
-      'gelatina|agar|cacau|chocolate|nib|whey|proteina|caseina|colageno|fermento|bicarbonato|essencia|extrato de baunilha|baunilha|adocante|stevia|estevia|eritritol|xilitol|acucar|mel|melado|sucralose|aveia|farelo|farinha|amido|polvilho|goma|tapioca|linhaca|chia|gergelim|semente|psyllium|casca de psyllium|fibra|oleaginosa|amendoa|castanha|noz|pistache|macadamia|avela|amendoim|uva passa|damasco|figo seco|ameixa seca|tamara|cranberry|biomassa|quinoa|arroz|feijao|lentilha|grao|macarrao|massa|farinha de rosca|panko|cafe|cha|matcha|spirulina|inulina|maltodextrina|canjica|milho de pipoca|pipoca|emulsificante|glutamina|liga neutra|floco|amaranto|granola|mix|cereal|biscoito|bolacha|wafer|barra|envelope',
+      'gelatina|agar|cacau|chocolate|nib|whey|proteina|caseina|colageno|fermento|bicarbonato|essencia|extrato de baunilha|baunilha|adocante|stevia|estevia|eritritol|xilitol|acucar|mel|melado|sucralose|aveia|farelo|farinha|amido|polvilho|goma|tapioca|linhaca|chia|gergelim|semente|psyllium|casca de psyllium|fibra|amendoa|castanha|noz|pistache|macadamia|avela|amendoim|uva passa|damasco|figo seco|ameixa seca|tamara|cranberry|biomassa|quinoa|arroz|feijao|lentilha|grao|macarrao|massa|farinha de rosca|panko|cafe|cha|matcha|spirulina|inulina|maltodextrina|canjica|milho de pipoca|pipoca|emulsificante|glutamina|liga neutra|floco|amaranto|granola|mix|cereal|biscoito|bolacha|wafer|barra|envelope',
     ),
   ],
   [

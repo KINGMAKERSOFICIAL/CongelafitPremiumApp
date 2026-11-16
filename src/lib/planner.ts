@@ -109,8 +109,6 @@ const LIGHT_DINNER = [
 ];
 const BREAKFAST = ['omeletes-e-ovos', 'paes-panquecas-e-lanches', 'mingaus-granolas-e-iogurtes'];
 const SNACK = [
-  'lanches-para-congelar',
-  'doces-saudaveis-e-funcionais',
   'paes-panquecas-e-lanches',
   'bebidas-e-vitaminas',
   'docinhos-e-biscoitos',

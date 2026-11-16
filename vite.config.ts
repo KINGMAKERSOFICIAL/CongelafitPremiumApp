@@ -6,6 +6,11 @@ import { VitePWA } from 'vite-plugin-pwa';
 // base './' => funciona em qualquer endereço (GitHub Pages, domínio próprio, abrir local).
 export default defineConfig({
   base: './',
+  server: {
+    host: '0.0.0.0',
+    port: 3000,
+    allowedHosts: true,
+  },
   plugins: [
     react(),
     VitePWA({
@@ -15,7 +20,7 @@ export default defineConfig({
         name: 'CongelaFit Premium · Freezer, Planner e Receitas',
         short_name: 'CongelaFit',
         description:
-          'Organize suas marmitas: freezer com validade, planner da semana, lista de compras e 430 receitas: low carb, lanches para congelar e doces saudáveis.',
+          'Organize suas marmitas: freezer com validade, planner da semana, lista de compras e 396 receitas low carb.',
         lang: 'pt-BR',
         start_url: './',
         scope: './',

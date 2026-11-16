@@ -2484,27 +2484,6 @@ h3 {
 .freeze-card p {
   margin: 8px 0 0;
 }
-.recipe-tip {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-top: 22px;
-  padding: 12px 14px;
-  background: var(--ice2, #ddf1fb);
-  border-radius: var(--radius);
-  color: var(--ink);
-}
-.recipe-tip svg {
-  color: var(--blue-deep, #0a6f9e);
-  flex: none;
-  margin-top: 2px;
-}
-.recipe-tip p {
-  margin: 0;
-}
-.recipe-tip b {
-  color: var(--blue-deep, #0a6f9e);
-}
 
 /* ═════════ impressão (etiquetas) ═════════ */
 @page {

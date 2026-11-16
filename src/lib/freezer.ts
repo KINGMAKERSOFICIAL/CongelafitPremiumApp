@@ -8,7 +8,7 @@
  */
 import { addDays, addMonths, daysBetween, fmtDate, isISO, relativeDays } from './dates';
 import { norm } from './text';
-import type { Basis, RecipeFreeze } from '../types';
+import type { Basis } from '../types';
 
 export const FREEZER_KEY = 'fz';
 
@@ -22,8 +22,6 @@ export interface FreezeRule {
   note: string;
   /** Como servir depois: aquecer (prato quente) ou apenas descongelar (doces, sorvetes). */
   serve: 'reheat' | 'thaw';
-  /** Como reaquecer/servir, quando a receita tem orientação própria. */
-  reheat?: string;
 }
 
 const rule = (
@@ -109,17 +107,6 @@ export const RULES_BY_CAT: Record<string, FreezeRule> = {
   ),
   'docinhos-e-biscoitos': rule(3, 'ok', 'Congele em camadas separadas por papel manteiga.', 'thaw'),
   'sorvetes-e-picoles': rule(2, 'ok', 'Cubra a superfície com filme para evitar cristais de gelo.', 'thaw'),
-  'lanches-para-congelar': rule(
-    2,
-    'ok',
-    'Cada lanche tem prazo próprio, indicado na receita. Congele frio e porcionado, em pote ou saquinho sem ar.',
-  ),
-  'doces-saudaveis-e-funcionais': rule(
-    1,
-    'ok',
-    'Cada doce tem prazo próprio, indicado na receita. Congele frio e porcionado, em pote ou saquinho sem ar.',
-    'thaw',
-  ),
 };
 
 const FALLBACK = rule(2, 'ok', 'Esfrie por completo, porcione e embale sem ar.');
@@ -149,11 +136,7 @@ const TITLE_RULES: [RegExp, FreezeRule][] = [
   [/granola/, rule(3, 'ok', 'Em pote hermético: no freezer as oleaginosas não rancificam.', 'thaw')],
 ];
 
-export function freezeRuleFor(r: { cat: string; title: string; freeze?: RecipeFreeze }): FreezeRule {
-  if (r.freeze) {
-    const f = r.freeze;
-    return { months: f.months, verdict: f.verdict, note: f.how, serve: f.serve, reheat: f.reheat };
-  }
+export function freezeRuleFor(r: { cat: string; title: string }): FreezeRule {
   const t = norm(r.title);
   for (const [re, rl] of TITLE_RULES) if (re.test(t)) return rl;
   return RULES_BY_CAT[r.cat] ?? FALLBACK;
