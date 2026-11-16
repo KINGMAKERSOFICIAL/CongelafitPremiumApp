@@ -114,6 +114,12 @@ export const RULES_BY_CAT: Record<string, FreezeRule> = {
     'ok',
     'Cada lanche tem prazo próprio, indicado na receita. Congele frio e porcionado, em pote ou saquinho sem ar.',
   ),
+  'doces-saudaveis-e-funcionais': rule(
+    1,
+    'ok',
+    'Cada doce tem prazo próprio, indicado na receita. Congele frio e porcionado, em pote ou saquinho sem ar.',
+    'thaw',
+  ),
 };
 
 const FALLBACK = rule(2, 'ok', 'Esfrie por completo, porcione e embale sem ar.');

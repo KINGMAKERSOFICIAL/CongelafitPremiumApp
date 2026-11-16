@@ -1,6 +1,6 @@
 # CongelaFit Premium
 
-App web (PWA) para organizar marmitas congeladas: **Meu Freezer** com validade, **Planner** da semana, **Lista de compras** automática e **412 receitas** (396 low carb e 16 lanches para congelar) com foto, calorias e modo de preparo. Funciona offline e pode ser instalado na tela inicial do celular.
+App web (PWA) para organizar marmitas congeladas: **Meu Freezer** com validade, **Planner** da semana, **Lista de compras** automática e **430 receitas** (396 low carb, 16 lanches para congelar e 18 doces saudáveis) com foto, calorias e modo de preparo. Funciona offline e pode ser instalado na tela inicial do celular.
 
 Site: [www.congelafit.com.br](https://www.congelafit.com.br)
 
@@ -9,7 +9,7 @@ Site: [www.congelafit.com.br](https://www.congelafit.com.br)
 | Tela | O que faz |
 | --- | --- |
 | **Início** | Painel do dia: o que consumir primeiro no freezer, cardápio de hoje, itens que faltam comprar e sugestões de receitas. |
-| **Receitas** | As 412 receitas em 19 categorias (inclui **Lanches para Congelar**, com validade, congelamento e reaquecimento próprios de cada receita), busca, favoritas, ajuste de porções (½×, 2×, 3×), tela sempre acesa. Cada receita tem os botões **Congelar**, **Planejar** e **Lista de compras**, além de um cartão com o prazo de congelamento. |
+| **Receitas** | As 430 receitas em 20 categorias (inclui **Lanches para Congelar** e **Doces Saudáveis e Funcionais**, com validade, congelamento e como servir próprios de cada receita), busca, favoritas, ajuste de porções (½×, 2×, 3×), tela sempre acesa. Cada receita tem os botões **Congelar**, **Planejar** e **Lista de compras**, além de um cartão com o prazo de congelamento. |
 | **Meu Freezer** | Registro do que foi congelado, validade calculada por categoria (ajustável), ordem PEPS (o que vence primeiro sai primeiro), alertas de "consumir logo" e "passou do prazo", botões "Comi 1" e "+1", compartilhar lista e **etiqueta imprimível** (2 por linha na A4). |
 | **Planner** | Semana de segunda a domingo com café, almoço, lanche e jantar. **Montar cardápio** sugere receitas (equilibrado, leve ou rápido), sem repetir na semana e priorizando as favoritas, preenchendo só as refeições vazias. Calorias estimadas por dia e compartilhamento. |
 | **Compras** | Soma os ingredientes das receitas (só entre unidades iguais), agrupa por seção do mercado, aceita itens digitados e marca o que já foi comprado. |
@@ -53,7 +53,7 @@ Repositório privado só publica no Pages em planos pagos do GitHub. O app usa `
 
 ```
 src/
-  data/recipes.json     412 receitas (fonte única), data/index.ts (busca e categorias)
+  data/recipes.json     430 receitas (fonte única), data/index.ts (busca e categorias)
   data/guides.ts        textos dos guias
   lib/                  regras de negócio, puras e testadas
     dates.ts            datas ISO (AAAA-MM-DD), semana começando na segunda

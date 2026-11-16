@@ -25,7 +25,7 @@ export interface RecipeFreeze {
 
 export interface Recipe {
   id: string;
-  /** Número da receita (1–396: livro Low Carb; 397 em diante: Lanches para Congelar). */
+  /** Número da receita (1–396: livro Low Carb; 397–412: Lanches para Congelar; 413 em diante: Doces Saudáveis e Funcionais). */
   n: number;
   title: string;
   cat: string;
