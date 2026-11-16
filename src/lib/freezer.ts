@@ -109,6 +109,17 @@ export const RULES_BY_CAT: Record<string, FreezeRule> = {
   ),
   'docinhos-e-biscoitos': rule(3, 'ok', 'Congele em camadas separadas por papel manteiga.', 'thaw'),
   'sorvetes-e-picoles': rule(2, 'ok', 'Cubra a superfície com filme para evitar cristais de gelo.', 'thaw'),
+  'lanches-para-congelar': rule(
+    2,
+    'ok',
+    'Cada lanche tem prazo próprio, indicado na receita. Congele frio e porcionado, em pote ou saquinho sem ar.',
+  ),
+  'doces-saudaveis-e-funcionais': rule(
+    1,
+    'ok',
+    'Cada doce tem prazo próprio, indicado na receita. Congele frio e porcionado, em pote ou saquinho sem ar.',
+    'thaw',
+  ),
   'cafe-da-manha-para-congelar': rule(
     2,
     'ok',
