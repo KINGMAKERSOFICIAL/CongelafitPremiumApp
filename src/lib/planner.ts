@@ -107,8 +107,14 @@ const LIGHT_DINNER = [
   'peixes-e-frutos-do-mar',
   'saladas',
 ];
-const BREAKFAST = ['omeletes-e-ovos', 'paes-panquecas-e-lanches', 'mingaus-granolas-e-iogurtes'];
+const BREAKFAST = [
+  'omeletes-e-ovos',
+  'paes-panquecas-e-lanches',
+  'mingaus-granolas-e-iogurtes',
+  'cafe-da-manha-para-congelar',
+];
 const SNACK = [
+  'cafe-da-manha-para-congelar',
   'paes-panquecas-e-lanches',
   'bebidas-e-vitaminas',
   'docinhos-e-biscoitos',

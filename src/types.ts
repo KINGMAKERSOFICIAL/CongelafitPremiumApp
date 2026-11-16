@@ -11,9 +11,21 @@ export interface Group {
 
 export type Basis = 'porção' | 'unidade' | 'colher';
 
+/** Congelamento específico da receita (sobrepõe a regra da categoria). */
+export interface RecipeFreeze {
+  /** Prazo de qualidade a −18 °C, em meses. */
+  months: number;
+  verdict: 'ok' | 'caution' | 'no';
+  /** Como congelar. */
+  how: string;
+  /** Como reaquecer ou servir. */
+  reheat: string;
+  serve: 'reheat' | 'thaw';
+}
+
 export interface Recipe {
   id: string;
-  /** Número da receita no livro (1–396). */
+  /** Número da receita (1–396: livro Low Carb; 397 em diante: Café da Manhã para Congelar). */
   n: number;
   title: string;
   cat: string;
@@ -27,6 +39,11 @@ export interface Recipe {
   items: string[];
   groups: Group[] | null;
   steps: string[];
+  /** Tamanho da porção, quando a receita rende "porções" (ex.: "4 palitos"). */
+  portion?: string;
+  /** Dica curta da receita. */
+  tip?: string;
+  freeze?: RecipeFreeze;
 }
 
 export interface Category {
