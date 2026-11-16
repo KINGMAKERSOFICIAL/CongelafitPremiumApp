@@ -566,7 +566,7 @@ const SECTION_RULES: [string, RegExp][] = [
       'azeite|oleo|vinagre|shoyu|molho|mostarda|ketchup|maionese|pesto|extrato de tomate|tomate (pelado|seco|em lata|em conserva)|passata|polpa de tomate|azeitona|palmito|alcaparra|picle|pepino em conserva|atum|sardinha|milho verde|ervilha em lata|geleia|caldo|tahine|tahini|pasta de tomate|pasta de pimentao|miso|salmoura|creme de cebola',
     ),
   ],
-  ['padaria', w('pao|tortilha|wrap|rap10|torrada|bisnaguinha|massa folhada')],
+  ['padaria', w('pao|baguete|baguetinha|tortilha|wrap|rap10|torrada|bisnaguinha|massa folhada')],
   [
     'congelados',
     w(
