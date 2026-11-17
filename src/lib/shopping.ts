@@ -563,10 +563,10 @@ const SECTION_RULES: [string, RegExp][] = [
   [
     'conservas',
     w(
-      'azeite|oleo|vinagre|shoyu|molho|mostarda|ketchup|maionese|pesto|extrato de tomate|tomate (pelado|seco|em lata|em conserva)|passata|polpa de tomate|azeitona|palmito|alcaparra|picle|pepino em conserva|atum|sardinha|milho verde|ervilha em lata|geleia|caldo|tahine|tahini|pasta de tomate|pasta de pimentao|miso|salmoura|creme de cebola',
+      'azeite|oleo|vinagre|shoyu|molho|mostarda|ketchup|maionese|pesto|homu|extrato de tomate|tomate (pelado|seco|em lata|em conserva)|passata|polpa de tomate|azeitona|palmito|alcaparra|picle|pepino em conserva|atum|sardinha|milho verde|ervilha em lata|geleia|caldo|tahine|tahini|pasta de tomate|pasta de pimentao|miso|salmoura|creme de cebola',
     ),
   ],
-  ['padaria', w('pao|baguete|baguetinha|tortilha|wrap|rap10|torrada|bisnaguinha|massa folhada')],
+  ['padaria', w('pao|baguete|baguetinha|tortilha|wrap|rap10|torrada|bisnaguinha|massa folhada|disco de massa|massa para pastel|massa de pastel')],
   [
     'congelados',
     w(

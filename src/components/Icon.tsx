@@ -108,6 +108,8 @@ const CATEGORY_ICON_PATHS: Record<string, string> = {
     'M5 10h11v5a5 5 0 0 1-11 0v-5Zm11 1h2a2 2 0 0 1 0 4h-2M7 5.5c0 1 .7 1.5.7 2.5M11.5 5.5c0 1 .7 1.5.7 2.5M4 20h14',
   'lanches-para-congelar':
     'M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Zm0 5h16M12 5v7',
+  'lanches-para-levar-no-trabalho':
+    'M4 9a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9Zm5-2V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7M4 13h16m-9 0v2h2v-2',
   'bolos-e-tortas-doces': 'M4 13l8-5 8 5v6H4v-6Zm0 3h16M12 8V5m0-1.5v.01',
   'pudins-mousses-e-cremes':
     'M6 15l1.5-7h9L18 15H6Zm-2 0h16v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2Zm5-7c1-1.5 5-1.5 6 0',

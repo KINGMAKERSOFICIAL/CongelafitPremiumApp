@@ -20,7 +20,7 @@ export default defineConfig({
         name: 'CongelaFit Premium · Freezer, Planner e Receitas',
         short_name: 'CongelaFit',
         description:
-          'Organize suas marmitas: freezer com validade, planner da semana, lista de compras e 479 receitas: low carb, café da manhã, almoço, lanches e doces para congelar.',
+          'Organize suas marmitas: freezer com validade, planner da semana, lista de compras e 501 receitas: low carb, café da manhã, almoço, lanches e doces para congelar.',
         lang: 'pt-BR',
         start_url: './',
         scope: './',

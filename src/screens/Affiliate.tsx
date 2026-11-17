@@ -16,7 +16,7 @@ const TEMPLATES: Template[] = [
     id: 'amigas',
     label: 'Para amigas / família',
     build: (link) =>
-      `Oi! Tudo bem? Lembrei de você porque comecei a usar o *CongelaFit Premium* para organizar minhas marmitas da semana e estou economizando muito tempo.\n\nEle tem 479 receitas (com foto e passo a passo), controle de validade do freezer e lista de compras automática!\n\nDá uma olhada aqui se quiser conhecer: ${link}`,
+      `Oi! Tudo bem? Lembrei de você porque comecei a usar o *CongelaFit Premium* para organizar minhas marmitas da semana e estou economizando muito tempo.\n\nEle tem 501 receitas (com foto e passo a passo), controle de validade do freezer e lista de compras automática!\n\nDá uma olhada aqui se quiser conhecer: ${link}`,
   },
   {
     id: 'fitness',
@@ -28,7 +28,7 @@ const TEMPLATES: Template[] = [
     id: 'status',
     label: 'Status do WhatsApp',
     build: (link) =>
-      `Organizei minha semana inteira de marmitas em minutos com o *CongelaFit Premium*! ❄️🥗\n479 receitas + controle do freezer + lista de compras.\nQuem quiser o acesso ao app, está aqui: ${link}`,
+      `Organizei minha semana inteira de marmitas em minutos com o *CongelaFit Premium*! ❄️🥗\n501 receitas + controle do freezer + lista de compras.\nQuem quiser o acesso ao app, está aqui: ${link}`,
   },
   {
     id: 'economia',

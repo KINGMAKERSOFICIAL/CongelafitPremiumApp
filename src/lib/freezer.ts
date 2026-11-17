@@ -125,6 +125,11 @@ export const RULES_BY_CAT: Record<string, FreezeRule> = {
     'ok',
     'Cada receita tem prazo próprio, indicado na página. Congele frio e porcionado, em saquinho ou pote sem ar.',
   ),
+  'lanches-para-levar-no-trabalho': rule(
+    2,
+    'ok',
+    'Cada receita tem prazo próprio, indicado na página. Congele frio e porcionado, bem embalado e sem ar; wraps e sanduíches só com recheio que aguenta o freezer.',
+  ),
   'almoco-para-congelar': rule(
     2,
     'ok',

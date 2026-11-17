@@ -115,6 +115,7 @@ const BREAKFAST = [
 ];
 const SNACK = [
   'lanches-para-congelar',
+  'lanches-para-levar-no-trabalho',
   'cafe-da-manha-para-congelar',
   'doces-saudaveis-e-funcionais',
   'paes-panquecas-e-lanches',
