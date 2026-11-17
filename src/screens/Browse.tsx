@@ -21,6 +21,8 @@ const CATEGORY_LABELS: Record<string, string> = {
   'bebidas-e-vitaminas': 'Bebidas',
   'cafe-da-manha-para-congelar': 'Café',
   'lanches-para-congelar': 'Lanches',
+  'almoco-para-congelar': 'Almoço',
+  'molhos-marinadas-e-temperos-para-congelar': 'Marinadas',
   'bolos-e-tortas-doces': 'Bolos',
   'pudins-mousses-e-cremes': 'Pudins',
   'docinhos-e-biscoitos': 'Docinhos',

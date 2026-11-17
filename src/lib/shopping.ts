@@ -594,7 +594,7 @@ const SECTION_RULES: [string, RegExp][] = [
   [
     'mercearia',
     w(
-      'gelatina|agar|cacau|chocolate|nib|whey|proteina|caseina|colageno|fermento|bicarbonato|essencia|extrato de baunilha|baunilha|adocante|stevia|estevia|eritritol|xilitol|acucar|mel|melado|sucralose|aveia|farelo|farinha|amido|polvilho|goma|tapioca|linhaca|chia|gergelim|semente|psyllium|casca de psyllium|fibra|oleaginosa|amendoa|castanha|noz|pistache|macadamia|avela|amendoim|uva passa|damasco|figo seco|ameixa seca|tamara|cranberry|biomassa|quinoa|arroz|feijao|lentilha|grao|macarrao|massa|farinha de rosca|panko|cafe|cha|matcha|spirulina|inulina|maltodextrina|canjica|milho de pipoca|pipoca|emulsificante|glutamina|liga neutra|floco|amaranto|granola|mix|cereal|biscoito|bolacha|wafer|barra|envelope',
+      'gelatina|agar|cacau|chocolate|nib|whey|proteina|caseina|colageno|fermento|bicarbonato|essencia|extrato de baunilha|baunilha|adocante|stevia|estevia|eritritol|xilitol|acucar|mel|melado|sucralose|aveia|farelo|farinha|amido|polvilho|goma|tapioca|linhaca|chia|gergelim|semente|psyllium|casca de psyllium|fibra|oleaginosa|amendoa|castanha|noz|pistache|macadamia|avela|amendoim|uva passa|damasco|figo seco|ameixa seca|tamara|cranberry|biomassa|quinoa|trigo|arroz|feijao|lentilha|grao|macarrao|massa|farinha de rosca|panko|cafe|cha|matcha|spirulina|inulina|maltodextrina|canjica|milho de pipoca|pipoca|emulsificante|glutamina|liga neutra|floco|amaranto|granola|mix|cereal|biscoito|bolacha|wafer|barra|envelope',
     ),
   ],
   [

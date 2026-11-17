@@ -9,7 +9,7 @@ export function About() {
         <h1>CongelaFit Premium</h1>
       </header>
       <p>
-        O CongelaFit Premium reúne <b>{RECIPES.length} receitas</b> (o livro Low Carb, o Café da Manhã, os Lanches e os Doces Saudáveis para Congelar) em{' '}
+        O CongelaFit Premium reúne <b>{RECIPES.length} receitas</b> (o livro Low Carb, o Café da Manhã, os Lanches, os Doces Saudáveis e o Almoço para Congelar) em{' '}
         <b>{CATEGORIES.length} categorias</b>, com foto, calorias, rendimento, tempo e modo de preparo passo a
         passo, e ferramentas para organizar a cozinha de marmitas: <b>Meu Freezer</b>, <b>Planner</b> da
         semana e <b>Lista de compras</b>.

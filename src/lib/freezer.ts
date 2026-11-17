@@ -125,6 +125,17 @@ export const RULES_BY_CAT: Record<string, FreezeRule> = {
     'ok',
     'Cada receita tem prazo próprio, indicado na página. Congele frio e porcionado, em saquinho ou pote sem ar.',
   ),
+  'almoco-para-congelar': rule(
+    2,
+    'ok',
+    'Cada receita tem prazo próprio, indicado na página. Esfrie por 30 minutos, porcione e congele em potes com 2 cm livres no topo.',
+  ),
+  'molhos-marinadas-e-temperos-para-congelar': rule(
+    3,
+    'ok',
+    'Cada receita tem prazo próprio, indicado na página. Congele em porções pequenas, com 2 cm livres no topo; marinada vai junto com a carne crua.',
+    'thaw',
+  ),
 };
 
 const FALLBACK = rule(2, 'ok', 'Esfrie por completo, porcione e embale sem ar.');

@@ -97,7 +97,7 @@ export const GOALS: { id: Goal; name: string; hint: string }[] = [
   { id: 'rapido', name: 'Rápido', hint: 'Prontas em até 30 minutos' },
 ];
 
-const MAIN = ['carnes', 'aves', 'peixes-e-frutos-do-mar', 'sufles-e-tortas', 'pizzas-e-massas'];
+const MAIN = ['carnes', 'aves', 'peixes-e-frutos-do-mar', 'sufles-e-tortas', 'pizzas-e-massas', 'almoco-para-congelar'];
 const SIDE = ['legumes-e-acompanhamentos', 'saladas'];
 const LIGHT_DINNER = [
   'sopas-caldos-e-cremes',
