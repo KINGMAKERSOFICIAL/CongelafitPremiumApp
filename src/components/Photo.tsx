@@ -1,8 +1,12 @@
 import { getCategory } from '../data';
+import { getRecipeImageOverride, useRecipeImageOverrides } from '../lib/recipeImages';
 import type { Recipe } from '../types';
 
-export const imgUrl = (id: string, thumb: boolean) =>
+export const defaultImgUrl = (id: string, thumb: boolean) =>
   `${import.meta.env.BASE_URL}img/${thumb ? 't/' : ''}${id}.webp`;
+
+export const imgUrl = (id: string, thumb: boolean) =>
+  getRecipeImageOverride(id) ?? defaultImgUrl(id, thumb);
 
 export function Photo({
   recipe,
@@ -15,11 +19,15 @@ export function Photo({
   eager?: boolean;
   className?: string;
 }) {
-  if (recipe.img) {
+  const overrides = useRecipeImageOverrides();
+  const customSrc = overrides[recipe.id];
+  const src = customSrc || (recipe.img ? defaultImgUrl(recipe.img, thumb) : '');
+
+  if (src) {
     return (
       <img
         className={`photo ${className}`}
-        src={imgUrl(recipe.img, thumb)}
+        src={src}
         alt={`Foto de ${recipe.title}`}
         width={thumb ? 420 : 800}
         height={thumb ? 273 : 520}

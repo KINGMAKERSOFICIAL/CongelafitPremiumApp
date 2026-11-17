@@ -36,6 +36,7 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,woff2,png,json}'],
         navigateFallback: 'index.html',
+        navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//],
         runtimeCaching: [
           {
             // Fotos entram no cache conforme são vistas (evita baixar 17 MB na instalação).

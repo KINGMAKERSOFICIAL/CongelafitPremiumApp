@@ -8,6 +8,7 @@ import { Sheet } from '../components/Sheet';
 import { WEEKDAYS, fmtDM, todayISO, weekdayIndex } from '../lib/dates';
 import { freezeRuleFor } from '../lib/freezer';
 import { addShopRecipe, usePlan, useShop } from '../lib/hooks';
+import { trackEvent } from '../lib/api';
 import { SLOTS, addTo, MAX_PER_SLOT, recipesIn, type Slot } from '../lib/planner';
 import { scaleIngredient, formatNum } from '../lib/scale';
 import { shareOrWhatsApp } from '../lib/share';
@@ -87,7 +88,10 @@ export function Recipe() {
 
   useEffect(() => setFactor(1), [id]);
   useEffect(() => {
-    if (r) document.title = `${r.title} · CongelaFit Premium`;
+    if (r) {
+      document.title = `${r.title} · CongelaFit Premium`;
+      trackEvent('recipe_view', r.id);
+    }
     return () => {
       document.title = 'CongelaFit Premium';
     };

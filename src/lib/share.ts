@@ -8,5 +8,11 @@ export async function shareOrWhatsApp(title: string, text: string): Promise<void
       /* cancelado: cai para o WhatsApp */
     }
   }
-  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+  const a = document.createElement('a');
+  a.href = `https://wa.me/?text=${encodeURIComponent(text)}`;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
