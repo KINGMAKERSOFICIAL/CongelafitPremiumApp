@@ -141,6 +141,12 @@ export const RULES_BY_CAT: Record<string, FreezeRule> = {
     'Cada receita tem prazo próprio, indicado na página. Congele em porções pequenas, com 2 cm livres no topo; marinada vai junto com a carne crua.',
     'thaw',
   ),
+  'marinadas-rapidas-e-saudaveis': rule(
+    2,
+    'ok',
+    'Cada receita tem prazo próprio, indicado na página. Congele a proteína crua com a marinada em saco ziplock, sem ar, em camada fina; legumes crus não vão ao freezer.',
+    'thaw',
+  ),
 };
 
 const FALLBACK = rule(2, 'ok', 'Esfrie por completo, porcione e embale sem ar.');

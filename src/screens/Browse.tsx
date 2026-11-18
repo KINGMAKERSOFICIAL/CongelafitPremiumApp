@@ -24,6 +24,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   'lanches-para-levar-no-trabalho': 'Trabalho',
   'almoco-para-congelar': 'Almoço',
   'molhos-marinadas-e-temperos-para-congelar': 'Marinadas',
+  'marinadas-rapidas-e-saudaveis': 'Marinadas rápidas',
   'bolos-e-tortas-doces': 'Bolos',
   'pudins-mousses-e-cremes': 'Pudins',
   'docinhos-e-biscoitos': 'Docinhos',

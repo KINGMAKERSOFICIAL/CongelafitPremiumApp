@@ -25,7 +25,7 @@ export interface RecipeFreeze {
 
 export interface Recipe {
   id: string;
-  /** Número da receita (1–396: livro Low Carb; 397–415: Café da Manhã para Congelar; 416–431: Lanches para Congelar; 432–449: Doces Saudáveis e Funcionais; 450–464: Almoço para Congelar; 465–479: Molhos, Marinadas e Temperos para Congelar; 480–501: Lanches para Levar no Trabalho). */
+  /** Número da receita (1–396: livro Low Carb; 397–415: Café da Manhã para Congelar; 416–431: Lanches para Congelar; 432–449: Doces Saudáveis e Funcionais; 450–464: Almoço para Congelar; 465–479: Molhos, Marinadas e Temperos para Congelar; 480–501: Lanches para Levar no Trabalho; 502–506: Marinadas Rápidas e Saudáveis). */
   n: number;
   title: string;
   cat: string;
