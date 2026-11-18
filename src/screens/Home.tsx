@@ -52,7 +52,13 @@ export function Home() {
     <div className="page dash">
       <header className="page-head">
         <p className="eyebrow">{WEEKDAYS[weekdayIndex(today)]}</p>
-        <h1>Hoje, {fmtDM(today)}</h1>
+        <div className="dash-date-row">
+          <h1>Hoje, {fmtDM(today)}</h1>
+          <Link to="/receitas" className="dash-recipe-count">
+            <Icon name="book" size={16} />
+            <b>{RECIPES.length}</b> receitas
+          </Link>
+        </div>
         <p>Seu freezer, o cardápio do dia e a lista de compras em um só lugar.</p>
       </header>
 
