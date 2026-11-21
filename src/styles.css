@@ -1418,6 +1418,9 @@ h3 {
 .chips.filters {
   margin: 14px 0;
 }
+.chips.compact {
+  margin-top: 6px;
+}
 .hero-link {
   display: inline-flex;
   align-items: center;

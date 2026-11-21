@@ -36,10 +36,18 @@ interface AnalyticsPayload {
 }
 
 interface KiwifySettings {
+  appBaseUrl?: string;
   kiwifyWebhookToken: string;
   kiwifyCheckoutUrl: string;
   kiwifyAffiliateInviteUrl: string;
   updatedAt: string;
+}
+
+interface KiwifyHosting {
+  requestOrigin: string;
+  publicOrigin: string;
+  defaultSiteUrl: string;
+  kiwifySiteUrl: string;
 }
 
 interface WebhookLog {
@@ -336,12 +344,15 @@ function AnalyticsTab() {
 /* ═════════ ABA 2: WEBHOOK KIWIFY & MEMBROS ═════════ */
 function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }) {
   const [settings, setSettings] = useState<KiwifySettings | null>(null);
+  const [hosting, setHosting] = useState<KiwifyHosting | null>(null);
   const [logs, setLogs] = useState<WebhookLog[]>([]);
   const [members, setMembers] = useState<AdminMember[]>([]);
+  const [appBaseUrl, setAppBaseUrl] = useState('');
   const [token, setToken] = useState('');
   const [checkoutUrl, setCheckoutUrl] = useState('');
   const [affiliateInviteUrl, setAffiliateInviteUrl] = useState('');
   const [saving, setSaving] = useState(false);
+  const [probing, setProbing] = useState(false);
   const [err, setErr] = useState('');
 
   // Simular webhook
@@ -356,11 +367,13 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
 
   const loadAll = useCallback(async () => {
     const [kiwify, mem] = await Promise.all([
-      apiFetch<{ settings: KiwifySettings; webhookLogs: WebhookLog[] }>('/api/admin/kiwify'),
+      apiFetch<{ settings: KiwifySettings; webhookLogs: WebhookLog[]; hosting?: KiwifyHosting }>('/api/admin/kiwify'),
       apiFetch<{ members: AdminMember[] }>('/api/admin/members'),
     ]);
     setSettings(kiwify.settings);
+    setHosting(kiwify.hosting ?? null);
     setLogs(kiwify.webhookLogs);
+    setAppBaseUrl(kiwify.settings.appBaseUrl ?? '');
     setToken(kiwify.settings.kiwifyWebhookToken);
     setCheckoutUrl(kiwify.settings.kiwifyCheckoutUrl);
     setAffiliateInviteUrl(kiwify.settings.kiwifyAffiliateInviteUrl);
@@ -371,7 +384,10 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
     void loadAll();
   }, [loadAll]);
 
-  const webhookUrl = `${window.location.origin}/api/webhooks/kiwify/${token}`;
+  const detectedPublicOrigin = hosting?.publicOrigin || window.location.origin;
+  const effectiveBaseUrl = (appBaseUrl.trim() || detectedPublicOrigin).replace(/\/+$/, '');
+  const webhookUrl = `${effectiveBaseUrl}/api/webhooks/kiwify/${token}`;
+  const webhookBaseUrl = `${effectiveBaseUrl}/api/webhooks/kiwify`;
 
   const saveSettings = async (e: FormEvent) => {
     e.preventDefault();
@@ -381,6 +397,7 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
       await apiFetch('/api/admin/kiwify', {
         method: 'PUT',
         body: JSON.stringify({
+          appBaseUrl: appBaseUrl.trim().replace(/\/+$/, ''),
           kiwifyWebhookToken: token.trim(),
           kiwifyCheckoutUrl: checkoutUrl.trim(),
           kiwifyAffiliateInviteUrl: affiliateInviteUrl.trim(),
@@ -403,12 +420,29 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
     setToken(hex);
   };
 
-  const copyWebhook = async () => {
+  const copyUrl = async (url: string, label: string) => {
     try {
-      await navigator.clipboard.writeText(webhookUrl);
-      toast('URL do Webhook copiada.');
+      await navigator.clipboard.writeText(url);
+      toast(`${label} copiada.`);
     } catch {
       toast('Copie a URL exibida no campo.');
+    }
+  };
+
+  const testEndpointLive = async () => {
+    setProbing(true);
+    try {
+      const res = await fetch('/api/webhooks/kiwify');
+      const data = (await res.json()) as { ok?: boolean; service?: string };
+      if (res.ok && data.ok) {
+        toast('Endpoint do Webhook ativo e respondendo (200 OK).');
+      } else {
+        toast('O endpoint respondeu, mas sem confirmação padrão.');
+      }
+    } catch {
+      toast('Não foi possível alcançar o endpoint do Webhook.');
+    } finally {
+      setProbing(false);
     }
   };
 
@@ -480,27 +514,79 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
   return (
     <div className="stack">
       <section className="card pad-card stack">
-        <h2>Configuração do Webhook da Kiwify</h2>
+        <div className="dash-head">
+          <h2>Configuração do Webhook da Kiwify</h2>
+          <div className="table-actions">
+            <a href="https://kiwify.com.br/" target="_blank" rel="noopener noreferrer" className="btn ghost sm">
+              <Icon name="external" size={14} /> Abrir Kiwify
+            </a>
+            <a href="https://congelafit.com.br" target="_blank" rel="noopener noreferrer" className="btn ghost sm">
+              <Icon name="external" size={14} /> Site CongelaFit
+            </a>
+          </div>
+        </div>
         <p className="small">
-          Cole esta URL no painel da Kiwify (Webhooks) para liberar e bloquear o acesso dos compradores
-          automaticamente quando houver compra aprovada, renovação, reembolso ou cancelamento.
+          O Webhook recebe automaticamente os eventos da <b>Kiwify</b> (<code>https://kiwify.com.br/</code>) no
+          servidor onde o <b>CongelaFit</b> está hospedado para liberar e bloquear o acesso dos compradores em tempo
+          real.
         </p>
 
         <div className="field">
-          <label htmlFor="kw-url">URL do Webhook para colar na Kiwify</label>
+          <label htmlFor="kw-url">URL do Webhook pronta para colar na Kiwify (com token)</label>
           <div className="field-row">
             <input id="kw-url" type="text" readOnly value={webhookUrl} />
-            <button type="button" className="btn ghost" onClick={() => void copyWebhook()}>
+            <button type="button" className="btn ghost" onClick={() => void copyUrl(webhookUrl, 'URL do Webhook')}>
               <Icon name="copy" size={16} /> Copiar URL
+            </button>
+            <button type="button" className="btn ghost" onClick={() => void testEndpointLive()} disabled={probing}>
+              <Icon name="check" size={16} /> {probing ? 'Testando…' : 'Verificar status'}
             </button>
           </div>
           <p className="hint">
-            Também aceita <code>{window.location.origin}/api/webhooks/kiwify?token=...</code> ou assinatura
-            HMAC-SHA1 da Kiwify com o token abaixo.
+            Se preferir validar usando o token gerado pela própria Kiwify (assinatura HMAC-SHA1), cole{' '}
+            <code>{webhookBaseUrl}</code> na Kiwify e cole o token da Kiwify no campo abaixo.
           </p>
         </div>
 
         <form className="form" onSubmit={saveSettings}>
+          <div className="field">
+            <label htmlFor="kw-host">Domínio onde o app CongelaFit está hospedado</label>
+            <input
+              id="kw-host"
+              type="url"
+              placeholder={detectedPublicOrigin}
+              value={appBaseUrl}
+              onChange={(e) => setAppBaseUrl(e.target.value)}
+            />
+            <div className="chips compact">
+              <button
+                type="button"
+                className={`chip ${!appBaseUrl.trim() || appBaseUrl.trim() === detectedPublicOrigin ? 'on' : ''}`}
+                onClick={() => setAppBaseUrl(detectedPublicOrigin)}
+              >
+                Usar servidor atual ({detectedPublicOrigin.replace(/^https?:\/\//, '').slice(0, 32)}
+                {detectedPublicOrigin.replace(/^https?:\/\//, '').length > 32 ? '…' : ''})
+              </button>
+              <button
+                type="button"
+                className={`chip ${appBaseUrl.trim() === 'https://congelafit.com.br' ? 'on' : ''}`}
+                onClick={() => setAppBaseUrl('https://congelafit.com.br')}
+              >
+                https://congelafit.com.br
+              </button>
+              <button
+                type="button"
+                className={`chip ${appBaseUrl.trim() === 'https://app.congelafit.com.br' ? 'on' : ''}`}
+                onClick={() => setAppBaseUrl('https://app.congelafit.com.br')}
+              >
+                https://app.congelafit.com.br
+              </button>
+            </div>
+            <p className="hint">
+              Deixe no servidor atual enquanto usar este endereço hospedado ou escolha o domínio oficial quando publicar.
+            </p>
+          </div>
+
           <div className="field">
             <label htmlFor="kw-token">Token / Segredo do Webhook</label>
             <div className="field-row">
@@ -518,11 +604,11 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
           </div>
 
           <div className="field">
-            <label htmlFor="kw-checkout">Link de Checkout do CongelaFit na Kiwify (página de vendas/compra)</label>
+            <label htmlFor="kw-checkout">Site / Checkout do CongelaFit na Kiwify</label>
             <input
               id="kw-checkout"
               type="url"
-              placeholder="https://pay.kiwify.com.br/..."
+              placeholder="https://congelafit.com.br"
               value={checkoutUrl}
               onChange={(e) => setCheckoutUrl(e.target.value)}
             />
@@ -533,7 +619,7 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
             <input
               id="kw-aff"
               type="url"
-              placeholder="https://dashboard.kiwify.com.br/join/affiliate/..."
+              placeholder="https://kiwify.com.br/"
               value={affiliateInviteUrl}
               onChange={(e) => setAffiliateInviteUrl(e.target.value)}
             />
@@ -551,6 +637,18 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
             </button>
           </div>
         </form>
+
+        <div className="callout ok">
+          <Icon name="info" size={18} />
+          <div>
+            <b>Como ativar na Kiwify (https://kiwify.com.br/)</b>
+            <p>
+              No painel da Kiwify, vá em <b>Apps → Webhooks → Criar Webhook</b>, cole a URL acima, selecione o produto{' '}
+              <b>CongelaFit</b> e marque os eventos: <b>Compra aprovada</b>, <b>Compra reembolsada</b>,{' '}
+              <b>Chargeback</b>, <b>Assinatura cancelada</b>, <b>Assinatura atrasada</b> e <b>Assinatura renovada</b>.
+            </p>
+          </div>
+        </div>
       </section>
 
       <div className="admin-two">

@@ -36,6 +36,20 @@ function isValidHttpUrl(value: string): boolean {
   }
 }
 
+function detectHostedOrigins(req: express.Request): { requestOrigin: string; publicOrigin: string } {
+  const envOrigin = (process.env.APP_URL || process.env.PUBLIC_URL || '').trim().replace(/\/+$/, '');
+  const protoHeader = (req.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0]?.trim();
+  const proto = protoHeader || req.protocol || 'https';
+  const hostHeader = (req.headers['x-forwarded-host'] as string | undefined)?.split(',')[0]?.trim();
+  const host = hostHeader || req.get('host') || '';
+  const detected = host ? `${proto}://${host}` : '';
+  const requestOrigin = envOrigin || detected;
+  const publicOrigin = requestOrigin.includes('://ais-dev-')
+    ? requestOrigin.replace('://ais-dev-', '://ais-pre-')
+    : requestOrigin;
+  return { requestOrigin, publicOrigin };
+}
+
 function normalizeEmail(email: unknown): string {
   return typeof email === 'string' ? email.trim().toLowerCase() : '';
 }
@@ -45,19 +59,24 @@ function cleanText(value: unknown, max = 300): string {
 }
 
 function processKiwifyEvent(
-  payload: Record<string, unknown>,
+  rawPayload: Record<string, unknown>,
   accepted: boolean,
   detailReason: string,
 ): { ok: boolean; statusCode: number; message: string } {
   const db = loadDb();
   const now = new Date().toISOString();
+  const payload =
+    rawPayload.data && typeof rawPayload.data === 'object' && !Array.isArray(rawPayload.data)
+      ? ({ ...rawPayload, ...(rawPayload.data as Record<string, unknown>) } as Record<string, unknown>)
+      : rawPayload;
 
   const customer = (payload.Customer ?? payload.customer ?? {}) as Record<string, unknown>;
   const product = (payload.Product ?? payload.product ?? {}) as Record<string, unknown>;
   const subscription = (payload.Subscription ?? payload.subscription ?? {}) as Record<string, unknown>;
 
   const email = normalizeEmail(customer.email ?? payload.email);
-  const name = cleanText(customer.full_name ?? customer.name ?? payload.name, 120) || 'Membro Kiwify';
+  const name =
+    cleanText(customer.full_name ?? customer.first_name ?? customer.name ?? payload.name, 120) || 'Membro Kiwify';
   const orderId = cleanText(payload.order_id ?? payload.order_ref ?? '', 80);
   const productName = cleanText(product.product_name ?? payload.product_name ?? 'CongelaFit Premium', 120);
   const rawStatus = cleanText(payload.order_status ?? subscription.status ?? '', 40).toLowerCase();
@@ -90,7 +109,9 @@ function processKiwifyEvent(
 
   let targetStatus: MemberStatus | null = null;
   if (
-    ['order_approved', 'order_paid', 'subscription_renewed', 'compra_aprovada'].includes(eventType) ||
+    ['order_approved', 'order_paid', 'subscription_renewed', 'compra_aprovada', 'assinatura_renovada'].includes(
+      eventType,
+    ) ||
     ['paid', 'approved', 'completed', 'active'].includes(rawStatus)
   ) {
     targetStatus = 'active';
@@ -100,11 +121,22 @@ function processKiwifyEvent(
   ) {
     targetStatus = 'refunded';
   } else if (
-    ['subscription_canceled', 'subscription_late', 'subscription_expired', 'assinatura_cancelada', 'assinatura_atrasada'].includes(eventType) ||
+    [
+      'subscription_canceled',
+      'subscription_late',
+      'subscription_expired',
+      'order_rejected',
+      'assinatura_cancelada',
+      'assinatura_atrasada',
+      'compra_recusada',
+    ].includes(eventType) ||
     ['canceled', 'cancelled', 'expired', 'refused'].includes(rawStatus)
   ) {
     targetStatus = 'canceled';
-  } else if (['waiting_payment', 'boleto_gerado', 'pix_gerado'].includes(eventType) || rawStatus === 'waiting_payment') {
+  } else if (
+    ['waiting_payment', 'boleto_gerado', 'pix_gerado', 'pix_created', 'billet_created'].includes(eventType) ||
+    rawStatus === 'waiting_payment'
+  ) {
     targetStatus = 'pending';
   }
 
@@ -153,7 +185,7 @@ async function startServer() {
   const app = express();
   app.set('trust proxy', 1);
 
-  // Mantém rawBody para validação opcional de assinatura HMAC-SHA1 da Kiwify
+  // Mantém rawBody para validação de assinatura HMAC-SHA1 da Kiwify
   app.use(
     express.json({
       limit: '8mb',
@@ -162,6 +194,7 @@ async function startServer() {
       },
     }),
   );
+  app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
   app.use('/uploads', express.static(UPLOADS_DIR, { maxAge: '7d' }));
   app.use('/api', attachUser);
@@ -327,35 +360,58 @@ async function startServer() {
   });
 
   // ───────── Webhook da Kiwify (público para chamadas server-to-server da Kiwify) ─────────
+  const handleKiwifyWebhookProbe = (req: express.Request, res: express.Response) => {
+    const origins = detectHostedOrigins(req);
+    res.json({
+      ok: true,
+      service: 'CongelaFit Premium Kiwify Webhook',
+      platform: 'https://kiwify.com.br/',
+      site: 'https://congelafit.com.br',
+      hostedOrigin: origins.publicOrigin,
+      endpoint: '/api/webhooks/kiwify',
+    });
+  };
+
   const handleKiwifyWebhook = (req: express.Request, res: express.Response) => {
     const db = loadDb();
     const expectedToken = db.settings.kiwifyWebhookToken;
-    const rawBody = (req as express.Request & { rawBody?: Buffer }).rawBody ?? Buffer.from(JSON.stringify(req.body ?? {}));
-    const sigQuery = typeof req.query.signature === 'string' ? req.query.signature.trim() : '';
+    const rawBody =
+      (req as express.Request & { rawBody?: Buffer }).rawBody ?? Buffer.from(JSON.stringify(req.body ?? {}));
+    const sigQuery =
+      (typeof req.query.signature === 'string' ? req.query.signature.trim() : '') ||
+      (typeof req.headers['x-kiwify-signature'] === 'string' ? req.headers['x-kiwify-signature'].trim() : '');
     const tokenParam =
-      (typeof req.params.token === 'string' ? req.params.token : '') ||
-      (typeof req.query.token === 'string' ? req.query.token : '') ||
-      (typeof req.headers['x-kiwify-token'] === 'string' ? req.headers['x-kiwify-token'] : '') ||
-      (typeof req.headers['x-webhook-token'] === 'string' ? req.headers['x-webhook-token'] : '') ||
-      (typeof req.body?.token === 'string' ? req.body.token : '');
+      (typeof req.params.token === 'string' ? req.params.token.trim() : '') ||
+      (typeof req.query.token === 'string' ? req.query.token.trim() : '') ||
+      (typeof req.headers['x-kiwify-token'] === 'string' ? req.headers['x-kiwify-token'].trim() : '') ||
+      (typeof req.headers['x-webhook-token'] === 'string' ? req.headers['x-webhook-token'].trim() : '') ||
+      (typeof req.body?.token === 'string' ? req.body.token.trim() : '');
 
-    let authorized = false;
+    const timingMatches = (provided: string, expected: string) => {
+      if (!provided || !expected) return false;
+      const a = Buffer.from(provided);
+      const b = Buffer.from(expected);
+      return a.length === b.length && crypto.timingSafeEqual(a, b);
+    };
+
+    const tokenMatches = timingMatches(tokenParam, expectedToken);
+    const hmacMatches = sigQuery
+      ? timingMatches(sigQuery, crypto.createHmac('sha1', expectedToken).update(rawBody).digest('hex')) ||
+        timingMatches(
+          sigQuery,
+          crypto
+            .createHmac('sha1', expectedToken)
+            .update(JSON.stringify(req.body ?? {}))
+            .digest('hex'),
+        )
+      : false;
+
+    const authorized = tokenMatches || hmacMatches;
     let reason = 'Token/assinatura da Kiwify válido.';
-
-    if (sigQuery) {
-      const expectedSig = crypto.createHmac('sha1', expectedToken).update(rawBody).digest('hex');
-      const a = Buffer.from(sigQuery);
-      const b = Buffer.from(expectedSig);
-      authorized = a.length === b.length && crypto.timingSafeEqual(a, b);
-      if (!authorized) reason = 'Assinatura HMAC da Kiwify inválida.';
-    } else if (tokenParam) {
-      const a = Buffer.from(tokenParam);
-      const b = Buffer.from(expectedToken);
-      authorized = a.length === b.length && crypto.timingSafeEqual(a, b);
-      if (!authorized) reason = 'Token do webhook da Kiwify inválido.';
-    } else {
-      authorized = false;
-      reason = 'Token ou assinatura do webhook ausente.';
+    if (!authorized) {
+      if (sigQuery && !hmacMatches) reason = 'Assinatura HMAC da Kiwify inválida.';
+      else if (tokenParam && !tokenMatches) reason = 'Token do webhook da Kiwify inválido.';
+      else reason = 'Token ou assinatura do webhook ausente.';
     }
 
     const payload = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
@@ -363,6 +419,8 @@ async function startServer() {
     res.status(result.statusCode).json({ ok: result.ok, message: result.message });
   };
 
+  app.get('/api/webhooks/kiwify', handleKiwifyWebhookProbe);
+  app.get('/api/webhooks/kiwify/:token', handleKiwifyWebhookProbe);
   app.post('/api/webhooks/kiwify', handleKiwifyWebhook);
   app.post('/api/webhooks/kiwify/:token', handleKiwifyWebhook);
 
@@ -440,26 +498,37 @@ async function startServer() {
     });
   });
 
-  app.get('/api/admin/kiwify', requireAdmin, (_req, res) => {
+  app.get('/api/admin/kiwify', requireAdmin, (req, res) => {
     const db = loadDb();
+    const hosting = detectHostedOrigins(req);
     res.json({
       settings: db.settings,
       webhookLogs: db.webhookLogs,
+      hosting: {
+        ...hosting,
+        defaultSiteUrl: 'https://congelafit.com.br',
+        kiwifySiteUrl: 'https://kiwify.com.br/',
+      },
     });
   });
 
   app.put('/api/admin/kiwify', requireAdmin, (req, res) => {
     const db = loadDb();
+    const appBaseUrl = cleanText(req.body?.appBaseUrl, 300).replace(/\/+$/, '');
     const token = cleanText(req.body?.kiwifyWebhookToken, 120);
     const checkoutUrl = cleanText(req.body?.kiwifyCheckoutUrl, 500);
     const affiliateInviteUrl = cleanText(req.body?.kiwifyAffiliateInviteUrl, 500);
 
+    if (appBaseUrl && !isValidHttpUrl(appBaseUrl)) {
+      res.status(400).json({ error: 'URL de hospedagem do app inválida (use https://...).' });
+      return;
+    }
     if (token.length < 6) {
       res.status(400).json({ error: 'O token do webhook precisa ter pelo menos 6 caracteres.' });
       return;
     }
     if (checkoutUrl && !isValidHttpUrl(checkoutUrl)) {
-      res.status(400).json({ error: 'Link de checkout da Kiwify inválido.' });
+      res.status(400).json({ error: 'Link de checkout/site do CongelaFit inválido.' });
       return;
     }
     if (affiliateInviteUrl && !isValidHttpUrl(affiliateInviteUrl)) {
@@ -467,6 +536,7 @@ async function startServer() {
       return;
     }
 
+    db.settings.appBaseUrl = appBaseUrl;
     db.settings.kiwifyWebhookToken = token;
     db.settings.kiwifyCheckoutUrl = checkoutUrl;
     db.settings.kiwifyAffiliateInviteUrl = affiliateInviteUrl;

@@ -59,6 +59,7 @@ export interface DailyMetric {
 }
 
 export interface AppSettings {
+  appBaseUrl?: string;
   kiwifyWebhookToken: string;
   kiwifyCheckoutUrl: string;
   kiwifyAffiliateInviteUrl: string;

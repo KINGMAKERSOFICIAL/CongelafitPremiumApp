@@ -33,9 +33,10 @@ function defaultDatabase(): Database {
   return {
     users: [adminUser],
     settings: {
+      appBaseUrl: (process.env.APP_URL || process.env.PUBLIC_URL || '').replace(/\/+$/, ''),
       kiwifyWebhookToken: process.env.KIWIFY_WEBHOOK_TOKEN || crypto.randomBytes(16).toString('hex'),
-      kiwifyCheckoutUrl: process.env.KIWIFY_CHECKOUT_URL || 'https://pay.kiwify.com.br/',
-      kiwifyAffiliateInviteUrl: process.env.KIWIFY_AFFILIATE_INVITE_URL || 'https://dashboard.kiwify.com.br/',
+      kiwifyCheckoutUrl: process.env.KIWIFY_CHECKOUT_URL || 'https://congelafit.com.br',
+      kiwifyAffiliateInviteUrl: process.env.KIWIFY_AFFILIATE_INVITE_URL || 'https://kiwify.com.br/',
       updatedAt: now,
     },
     recipeImages: {},
@@ -60,9 +61,19 @@ export function loadDb(): Database {
       const raw = fs.readFileSync(DB_FILE, 'utf8');
       const parsed = JSON.parse(raw) as Partial<Database>;
       const def = defaultDatabase();
+      const mergedSettings = { ...def.settings, ...(parsed.settings ?? {}) };
+      if (!mergedSettings.kiwifyCheckoutUrl || mergedSettings.kiwifyCheckoutUrl === 'https://pay.kiwify.com.br/') {
+        mergedSettings.kiwifyCheckoutUrl = 'https://congelafit.com.br';
+      }
+      if (
+        !mergedSettings.kiwifyAffiliateInviteUrl ||
+        mergedSettings.kiwifyAffiliateInviteUrl === 'https://dashboard.kiwify.com.br/'
+      ) {
+        mergedSettings.kiwifyAffiliateInviteUrl = 'https://kiwify.com.br/';
+      }
       const merged: Database = {
         users: Array.isArray(parsed.users) && parsed.users.length ? parsed.users : def.users,
-        settings: { ...def.settings, ...(parsed.settings ?? {}) },
+        settings: mergedSettings,
         recipeImages: parsed.recipeImages && typeof parsed.recipeImages === 'object' ? parsed.recipeImages : {},
         affiliateProducts: Array.isArray(parsed.affiliateProducts) ? parsed.affiliateProducts : [],
         webhookLogs: Array.isArray(parsed.webhookLogs) ? parsed.webhookLogs : [],
