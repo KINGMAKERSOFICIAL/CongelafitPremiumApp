@@ -49,6 +49,14 @@ O fluxo `.github/workflows/deploy.yml` roda os testes, gera o build e publica a 
 
 Repositório privado só publica no Pages em planos pagos do GitHub. O app usa `HashRouter` e `base: './'`, então funciona em qualquer endereço (Pages, domínio próprio ou abrindo a pasta `dist` localmente).
 
+## Proteção do conteúdo e compartilhamento
+
+- **Marca d'água** com o e-mail do membro sobre todas as telas (o administrador fica de fora). É a peça que torna um vazamento rastreável.
+- **Bloqueios no navegador**: seleção, cópia (o que for copiado vira um aviso com o link da página de vendas), arrastar, menu de contexto, salvar página e impressão (o CSS esconde tudo no papel; só a etiqueta do freezer imprime). A tela é coberta quando o app vai para o segundo plano (celular) e ao apertar PrintScreen.
+- **Limite honesto**: nenhum site consegue impedir o print do sistema nem a foto da tela por outro aparelho. Proteção forte exige o conteúdo fora do repositório e do pacote do app (servidor com login) e, no celular, um aplicativo nativo.
+- **Único compartilhamento**: a Lista de compras, em texto + PDF com a logo e o QR code do site (`src/lib/shoppingPdf.ts`, `src/lib/share.ts`). A copy e os links com UTM ficam em `src/lib/invite.ts`.
+- Código: `src/lib/protect.ts`, `src/components/Shield.tsx` e o bloco "proteção do conteúdo" em `src/styles.css`.
+
 ## Estrutura
 
 ```

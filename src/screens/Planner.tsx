@@ -21,7 +21,6 @@ import {
   type Goal,
   type Slot,
 } from '../lib/planner';
-import { shareOrWhatsApp } from '../lib/share';
 import { useFavorites } from '../lib/store';
 import { toast } from '../lib/toast';
 import { basisLabel } from '../lib/text';
@@ -73,19 +72,6 @@ export function Planner() {
     toast(`${counts.size} receitas na lista de compras.`, { to: '/compras', linkLabel: 'Ver lista' });
   };
 
-  const share = () => {
-    const lines = [`*Planner · semana de ${fmtDM(weekStart)} a ${fmtDM(addDays(weekStart, 6))}*`];
-    days.forEach((d, i) => {
-      const parts = SLOTS.flatMap((s) => {
-        const names = recipesIn(plan, d, s.id).map((id) => getRecipe(id)?.title ?? '');
-        return names.length ? [`  ${s.name}: ${names.join(' + ')}`] : [];
-      });
-      if (parts.length) lines.push('', `*${WEEKDAYS[i]} ${fmtDM(d)}*`, ...parts);
-    });
-    lines.push('', 'CongelaFit Premium · www.congelafit.com.br');
-    void shareOrWhatsApp('Planner da semana', lines.join('\n'));
-  };
-
   return (
     <div className="page">
       <header className="page-head row">
@@ -129,15 +115,6 @@ export function Planner() {
         </button>
         <button type="button" className="btn ghost" onClick={toShopping}>
           <Icon name="cart" size={18} /> Lista de compras da semana
-        </button>
-        <button
-          type="button"
-          className="icon-btn"
-          onClick={share}
-          aria-label="Compartilhar a semana"
-          disabled={total === 0}
-        >
-          <Icon name="share" />
         </button>
         <button
           type="button"

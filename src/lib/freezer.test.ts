@@ -7,7 +7,6 @@ import {
   expiryOf,
   freezeRuleFor,
   RULES_BY_CAT,
-  shareText,
   sortFifo,
   statusOf,
   statusText,
@@ -106,12 +105,6 @@ describe('freezer: dados salvos', () => {
       note: '',
     });
     expect(cleanFreezer('lixo')).toEqual([]);
-  });
-  it('gera o texto para WhatsApp', () => {
-    const t = shareText([item({ name: 'Lasanha', portions: 2 })], '2026-11-16');
-    expect(t).toContain('*Meu Freezer · CongelaFit*');
-    expect(t).toContain('• Lasanha — 2 porções · válido até 16/02/2027');
-    expect(shareText([], '2026-11-16')).toContain('Freezer vazio.');
   });
 });
 

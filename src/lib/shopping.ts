@@ -4,6 +4,7 @@
  */
 import { formatMetric, formatNum, leadingQty } from './scale';
 import { norm } from './text';
+import { shoppingInviteFooter } from './invite';
 
 /* ───────── unidades ───────── */
 
@@ -818,6 +819,6 @@ export function shareText(
     }
   }
   if (out.length === 1) out.push('', 'Tudo comprado!');
-  out.push('', 'www.congelafit.com.br');
+  out.push('', ...shoppingInviteFooter());
   return out.join('\n');
 }

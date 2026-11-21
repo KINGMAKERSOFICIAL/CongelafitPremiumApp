@@ -6,7 +6,7 @@
  * extensões universitárias consultadas. Congelado continuamente a −18 °C o alimento segue
  * seguro por mais tempo, mas perde qualidade. São estimativas a validar com a nutricionista.
  */
-import { addDays, addMonths, daysBetween, fmtDate, isISO, relativeDays } from './dates';
+import { addDays, addMonths, daysBetween, isISO, relativeDays } from './dates';
 import { norm } from './text';
 import type { Basis, RecipeFreeze } from '../types';
 
@@ -316,18 +316,6 @@ export function cleanFreezer(input: unknown): FreezerItem[] {
     });
   }
   return out;
-}
-
-export function shareText(items: FreezerItem[], today: string): string {
-  const lines = ['*Meu Freezer · CongelaFit*', ''];
-  for (const it of sortFifo(items)) {
-    lines.push(
-      `• ${it.name} — ${it.portions} ${unitText(it.unit, it.portions)} · válido até ${fmtDate(expiryOf(it))} (${statusText(it, today)})`,
-    );
-  }
-  if (items.length === 0) lines.push('Freezer vazio.');
-  lines.push('', 'www.congelafit.com.br');
-  return lines.join('\n');
 }
 
 /** Data sugerida para "descongelar na geladeira": véspera do consumo. */

@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { summarize } from '../lib/freezer';
 import { useFreezer, useShopLines, useToday } from '../lib/hooks';
 import { Icon } from './Icon';
+import { Shield } from './Shield';
 import { Toasts } from './Toasts';
 
 const base = import.meta.env.BASE_URL;
@@ -78,6 +79,7 @@ export function Layout() {
         </p>
       </footer>
       <Toasts />
+      <Shield />
       <nav className="tabbar" aria-label="Principal">
         {links.map((l) => (
           <NavLink key={l.to} to={l.to} end={l.end} className={({ isActive }) => (isActive ? 'active' : '')}>

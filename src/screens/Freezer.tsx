@@ -10,7 +10,6 @@ import {
   addOne,
   consumeOne,
   expiryOf,
-  shareText,
   sortFifo,
   statusOf,
   statusText,
@@ -19,7 +18,6 @@ import {
   type FreezerItem,
 } from '../lib/freezer';
 import { useFreezer, useToday } from '../lib/hooks';
-import { shareOrWhatsApp } from '../lib/share';
 import { toast } from '../lib/toast';
 
 type Filter = 'all' | 'soon' | 'expired';
@@ -108,15 +106,6 @@ export function Freezer() {
           <p>Ordenado pelo que vence primeiro: é só pegar de cima para baixo.</p>
         </div>
         <div className="head-actions">
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="Compartilhar lista do freezer"
-            disabled={items.length === 0}
-            onClick={() => void shareOrWhatsApp('Meu Freezer', shareText(items, today))}
-          >
-            <Icon name="share" />
-          </button>
           <Link to="/freezer/novo" className="btn">
             <Icon name="plus" size={18} /> Congelar
           </Link>
