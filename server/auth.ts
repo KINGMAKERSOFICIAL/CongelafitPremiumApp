@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Request, Response, NextFunction } from 'express';
+import { isAccessValid } from './kiwify.ts';
 import type { StoredUser } from './types.ts';
 
 export const SESSION_COOKIE = 'cf_session';
@@ -133,6 +134,7 @@ export function publicUser(u: StoredUser) {
     status: u.status,
     affiliateLink: u.affiliateLink ?? '',
     kiwifyProduct: u.kiwifyProduct ?? '',
+    accessUntil: u.accessUntil ?? null,
     lastLoginAt: u.lastLoginAt ?? null,
     createdAt: u.createdAt,
   };
@@ -151,7 +153,7 @@ export function createAuthMiddleware(
     const session = verifySession(token, secret);
     if (session) {
       const user = getDb().users.find((u) => u.id === session.uid);
-      if (user && user.status === 'active') {
+      if (user && isAccessValid(user)) {
         req.user = user;
       }
     }

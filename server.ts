@@ -13,6 +13,7 @@ import {
   verifyPassword,
   type AuthedRequest,
 } from './server/auth.ts';
+import { DEFAULT_ACCESS_DAYS, addDays, applyKiwifyEvent, authorizeKiwifyRequest, isAccessValid } from './server/kiwify.ts';
 import {
   DATA_DIR,
   UPLOADS_DIR,
@@ -58,123 +59,34 @@ function cleanText(value: unknown, max = 300): string {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
 
+/** Dias de acesso por compra aprovada (compra única com "1 ano de acesso" = 365). */
+function accessDays(): number {
+  const n = Number(process.env.ACCESS_DAYS);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_ACCESS_DAYS;
+}
+
+/** IDs de produto da Kiwify que liberam o app (KIWIFY_PRODUCT_IDS="id1,id2"). Vazio = todo evento deste webhook. */
+function kiwifyProductIds(): string[] {
+  return (process.env.KIWIFY_PRODUCT_IDS || '')
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
 function processKiwifyEvent(
   rawPayload: Record<string, unknown>,
   accepted: boolean,
   detailReason: string,
 ): { ok: boolean; statusCode: number; message: string } {
   const db = loadDb();
-  const now = new Date().toISOString();
-  const payload =
-    rawPayload.data && typeof rawPayload.data === 'object' && !Array.isArray(rawPayload.data)
-      ? ({ ...rawPayload, ...(rawPayload.data as Record<string, unknown>) } as Record<string, unknown>)
-      : rawPayload;
-
-  const customer = (payload.Customer ?? payload.customer ?? {}) as Record<string, unknown>;
-  const product = (payload.Product ?? payload.product ?? {}) as Record<string, unknown>;
-  const subscription = (payload.Subscription ?? payload.subscription ?? {}) as Record<string, unknown>;
-
-  const email = normalizeEmail(customer.email ?? payload.email);
-  const name =
-    cleanText(customer.full_name ?? customer.first_name ?? customer.name ?? payload.name, 120) || 'Membro Kiwify';
-  const orderId = cleanText(payload.order_id ?? payload.order_ref ?? '', 80);
-  const productName = cleanText(product.product_name ?? payload.product_name ?? 'CongelaFit Premium', 120);
-  const rawStatus = cleanText(payload.order_status ?? subscription.status ?? '', 40).toLowerCase();
-  const eventType = cleanText(payload.webhook_event_type ?? payload.event ?? rawStatus ?? 'webhook', 60).toLowerCase();
-
-  const logEntry = {
-    id: crypto.randomUUID(),
-    receivedAt: now,
-    event: eventType || 'unknown',
-    orderId: orderId || '—',
-    email: email || '—',
-    status: rawStatus || '—',
-    accepted,
-    detail: detailReason,
-  };
-
-  if (!accepted) {
-    db.webhookLogs = [logEntry, ...db.webhookLogs].slice(0, 100);
-    saveDb(db);
-    return { ok: false, statusCode: 401, message: detailReason };
-  }
-
-  if (!email || !email.includes('@')) {
-    logEntry.accepted = false;
-    logEntry.detail = 'Payload sem e-mail de cliente válido.';
-    db.webhookLogs = [logEntry, ...db.webhookLogs].slice(0, 100);
-    saveDb(db);
-    return { ok: false, statusCode: 400, message: logEntry.detail };
-  }
-
-  let targetStatus: MemberStatus | null = null;
-  if (
-    ['order_approved', 'order_paid', 'subscription_renewed', 'compra_aprovada', 'assinatura_renovada'].includes(
-      eventType,
-    ) ||
-    ['paid', 'approved', 'completed', 'active'].includes(rawStatus)
-  ) {
-    targetStatus = 'active';
-  } else if (
-    ['order_refunded', 'order_chargedback', 'compra_reembolsada', 'chargeback'].includes(eventType) ||
-    ['refunded', 'chargedback'].includes(rawStatus)
-  ) {
-    targetStatus = 'refunded';
-  } else if (
-    [
-      'subscription_canceled',
-      'subscription_late',
-      'subscription_expired',
-      'order_rejected',
-      'assinatura_cancelada',
-      'assinatura_atrasada',
-      'compra_recusada',
-    ].includes(eventType) ||
-    ['canceled', 'cancelled', 'expired', 'refused'].includes(rawStatus)
-  ) {
-    targetStatus = 'canceled';
-  } else if (
-    ['waiting_payment', 'boleto_gerado', 'pix_gerado', 'pix_created', 'billet_created'].includes(eventType) ||
-    rawStatus === 'waiting_payment'
-  ) {
-    targetStatus = 'pending';
-  }
-
-  const existing = db.users.find((u) => u.email === email);
-  if (existing) {
-    if (existing.role !== 'admin' && targetStatus) {
-      existing.status = targetStatus;
-    }
-    if (name && (!existing.name || existing.name === 'Membro Kiwify')) existing.name = name;
-    if (orderId) existing.kiwifyOrderId = orderId;
-    if (productName) existing.kiwifyProduct = productName;
-    existing.updatedAt = now;
-    logEntry.detail = `Membro atualizado (${existing.status}).`;
-  } else if (targetStatus) {
-    const newUser: StoredUser = {
-      id: `usr-${crypto.randomBytes(6).toString('hex')}`,
-      email,
-      name,
-      passwordHash: '',
-      passwordSalt: '',
-      role: 'member',
-      status: targetStatus,
-      needsPasswordSetup: true,
-      kiwifyOrderId: orderId || undefined,
-      kiwifyProduct: productName || undefined,
-      loginCount: 0,
-      createdAt: now,
-      updatedAt: now,
-    };
-    db.users.push(newUser);
-    logEntry.detail = `Novo membro registrado (${targetStatus}).`;
-  } else {
-    logEntry.detail = `Evento registrado sem alteração de status (${eventType}).`;
-  }
-
-  db.webhookLogs = [logEntry, ...db.webhookLogs].slice(0, 100);
+  const result = applyKiwifyEvent(db, rawPayload, {
+    authorized: accepted,
+    authReason: detailReason,
+    accessDays: accessDays(),
+    productIds: kiwifyProductIds(),
+  });
   saveDb(db);
-  return { ok: true, statusCode: 200, message: logEntry.detail };
+  return { ok: result.ok, statusCode: result.statusCode, message: result.message };
 }
 
 async function startServer() {
@@ -233,6 +145,10 @@ async function startServer() {
       res.status(403).json({ error: 'Seu pagamento na Kiwify ainda está pendente de confirmação.' });
       return;
     }
+    if (user.status === 'active' && !isAccessValid(user)) {
+      res.status(403).json({ error: 'Seu período de acesso terminou. Renove na Kiwify para voltar a usar o app.' });
+      return;
+    }
     if (user.status !== 'active') {
       res.status(403).json({ error: 'Seu acesso pela Kiwify está inativo, cancelado ou reembolsado.' });
       return;
@@ -284,7 +200,7 @@ async function startServer() {
       });
       return;
     }
-    if (user.status !== 'active') {
+    if (!isAccessValid(user)) {
       res.status(403).json({ error: 'Este acesso não está ativo na Kiwify no momento.' });
       return;
     }
@@ -387,32 +303,14 @@ async function startServer() {
       (typeof req.headers['x-webhook-token'] === 'string' ? req.headers['x-webhook-token'].trim() : '') ||
       (typeof req.body?.token === 'string' ? req.body.token.trim() : '');
 
-    const timingMatches = (provided: string, expected: string) => {
-      if (!provided || !expected) return false;
-      const a = Buffer.from(provided);
-      const b = Buffer.from(expected);
-      return a.length === b.length && crypto.timingSafeEqual(a, b);
-    };
-
-    const tokenMatches = timingMatches(tokenParam, expectedToken);
-    const hmacMatches = sigQuery
-      ? timingMatches(sigQuery, crypto.createHmac('sha1', expectedToken).update(rawBody).digest('hex')) ||
-        timingMatches(
-          sigQuery,
-          crypto
-            .createHmac('sha1', expectedToken)
-            .update(JSON.stringify(req.body ?? {}))
-            .digest('hex'),
-        )
-      : false;
-
-    const authorized = tokenMatches || hmacMatches;
-    let reason = 'Token/assinatura da Kiwify válido.';
-    if (!authorized) {
-      if (sigQuery && !hmacMatches) reason = 'Assinatura HMAC da Kiwify inválida.';
-      else if (tokenParam && !tokenMatches) reason = 'Token do webhook da Kiwify inválido.';
-      else reason = 'Token ou assinatura do webhook ausente.';
-    }
+    // KIWIFY_SIGNING_TOKEN = "Token" do webhook mostrado na Kiwify (chave do HMAC-SHA1 enviado em ?signature=).
+    const { authorized, reason } = authorizeKiwifyRequest({
+      rawBody,
+      signature: sigQuery,
+      urlToken: tokenParam,
+      expectedUrlToken: expectedToken,
+      signingToken: (process.env.KIWIFY_SIGNING_TOKEN || '').trim() || undefined,
+    });
 
     const payload = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
     const result = processKiwifyEvent(payload, authorized, reason);
@@ -634,6 +532,10 @@ async function startServer() {
     }
     if (typeof req.body?.status === 'string' && ['active', 'pending', 'refunded', 'canceled'].includes(req.body.status)) {
       target.status = req.body.status as MemberStatus;
+      // Reativar manualmente alguém com prazo vencido: dá um novo período a partir de hoje.
+      if (target.status === 'active' && target.accessUntil && Date.parse(target.accessUntil) <= Date.now()) {
+        target.accessUntil = addDays(Date.now(), accessDays());
+      }
     }
     if (req.body?.resetPassword === true) {
       target.passwordHash = '';

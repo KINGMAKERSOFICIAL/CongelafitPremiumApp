@@ -18,10 +18,35 @@ Site: [congelafit.store](https://congelafit.store)
 
 ## O que **não** tem (ainda)
 
-- Login, contas, planos Básico/Pro e controle de acesso.
-- Integração com a Kiwify (webhook de compra) e com banco de dados (Supabase).
+- Planos Básico/Pro e banco de dados externo (Supabase). O login, o controle de acesso e o webhook da Kiwify existem (ver "Acesso pela Kiwify" abaixo).
 
 Todos os dados do usuário ficam **só no aparelho** (`localStorage`). Para trocar de celular, use **Mais → Backup**.
+
+## Acesso pela Kiwify (servidor Express)
+
+O login e o webhook rodam no servidor (`server.ts`); o GitHub Pages sozinho não roda isso. Para publicar: `npm ci && npm run build && NODE_ENV=production npm start` (Node 22+).
+
+**Webhook:** `POST /api/webhooks/kiwify/<token-da-url>` (o token da URL está em Admin → Webhook Kiwify). Cadastre essa URL na Kiwify (Apps → Webhooks, produto do app) com todos os eventos de compra e assinatura.
+
+| Variável de ambiente | Para que serve |
+| --- | --- |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Conta do administrador criada na primeira execução. **Sem `ADMIN_PASSWORD` o servidor gera uma senha aleatória e mostra uma vez no log.** |
+| `SESSION_SECRET` | Chave das sessões (mínimo 16 caracteres). |
+| `KIWIFY_SIGNING_TOKEN` | "Token" do webhook mostrado na Kiwify. Com ele o servidor confere a assinatura HMAC-SHA1 enviada em `?signature=`. Recomendado. |
+| `KIWIFY_WEBHOOK_TOKEN` | Segredo que vai no final da URL do webhook (se vazio, é gerado e aparece no Admin). |
+| `KIWIFY_PRODUCT_IDS` | IDs de produto da Kiwify (separados por vírgula) que liberam o app. Vazio = todo evento recebido nesse webhook. |
+| `ACCESS_DAYS` | Dias de acesso por compra aprovada em produto de pagamento único (padrão 365). |
+| `DATA_DIR` | Pasta do banco (`db.json`) e dos uploads. **Em hospedagem com disco efêmero, aponte para um volume persistente.** |
+
+**Regras de acesso:**
+
+- Compra aprovada / renovação: libera por `ACCESS_DAYS` dias a partir da aprovação (comprar de novo antes do fim soma ao que sobra). Em assinatura, vale o `access_until` enviado pela Kiwify.
+- Cancelamento: registra e **mantém o acesso até o fim do período pago**.
+- Reembolso ou chargeback: remove o acesso na hora; o cadastro e o histórico ficam.
+- Pagamento recusado / assinatura atrasada: não derruba quem já pagou e não libera acesso novo.
+- Pix/boleto gerado: cria o membro como pendente, sem acesso.
+- O mesmo evento repetido (a Kiwify reenvia) é ignorado: deduplicação por `order_id` + tipo de evento.
+- Contas criadas antes desta regra não têm prazo e seguem ativas até o admin ou um evento mudar.
 
 ## Validade no freezer: estimativas a validar
 

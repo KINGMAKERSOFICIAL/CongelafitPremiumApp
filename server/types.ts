@@ -11,7 +11,12 @@ export interface StoredUser {
   status: MemberStatus;
   needsPasswordSetup: boolean;
   kiwifyOrderId?: string;
+  kiwifySubscriptionId?: string;
   kiwifyProduct?: string;
+  /** Último evento da Kiwify aplicado a este membro (ex.: order_approved). */
+  lastKiwifyEvent?: string;
+  /** Fim do acesso (ISO). Vazio = sem prazo (contas antigas). Admin ignora. */
+  accessUntil?: string;
   affiliateLink?: string;
   loginCount: number;
   lastLoginAt?: string;
@@ -79,5 +84,7 @@ export interface Database {
   recipeImages: Record<string, RecipeImageOverride>;
   affiliateProducts: AffiliateProduct[];
   webhookLogs: WebhookLog[];
+  /** Eventos da Kiwify já processados (`order_id:evento` → data ISO), para ignorar reenvios. */
+  processedEvents: Record<string, string>;
   analytics: AnalyticsData;
 }

@@ -4,7 +4,8 @@ import path from 'node:path';
 import { hashPassword } from './auth.ts';
 import type { Database, DailyMetric, StoredUser } from './types.ts';
 
-export const DATA_DIR = path.resolve(process.cwd(), '.congelafit-data');
+// Em hospedagem com disco efêmero, aponte DATA_DIR para um volume persistente (senão os membros somem a cada reinício).
+export const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(process.cwd(), '.congelafit-data'));
 export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 
@@ -15,7 +16,14 @@ function todayISO(): string {
 function defaultDatabase(): Database {
   const now = new Date().toISOString();
   const adminEmail = (process.env.ADMIN_EMAIL || 'suportekingmakers@gmail.com').trim().toLowerCase();
-  const adminPass = process.env.ADMIN_PASSWORD || 'CongelaAdmin2026!';
+  // Sem ADMIN_PASSWORD, gera uma senha temporária aleatória (nunca uma senha fixa no código).
+  let adminPass = process.env.ADMIN_PASSWORD;
+  if (!adminPass) {
+    adminPass = crypto.randomBytes(12).toString('base64url');
+    console.warn(
+      `[CongelaFit] ADMIN_PASSWORD não definida. Senha temporária do admin (${adminEmail}): ${adminPass} — defina ADMIN_PASSWORD e troque.`,
+    );
+  }
   const { hash, salt } = hashPassword(adminPass);
   const adminUser: StoredUser = {
     id: 'admin-1',
@@ -42,6 +50,7 @@ function defaultDatabase(): Database {
     recipeImages: {},
     affiliateProducts: [],
     webhookLogs: [],
+    processedEvents: {},
     analytics: {
       totalLogins: 0,
       recipeViews: {},
@@ -86,6 +95,8 @@ export function loadDb(): Database {
         recipeImages: parsed.recipeImages && typeof parsed.recipeImages === 'object' ? parsed.recipeImages : {},
         affiliateProducts: Array.isArray(parsed.affiliateProducts) ? parsed.affiliateProducts : [],
         webhookLogs: Array.isArray(parsed.webhookLogs) ? parsed.webhookLogs : [],
+        processedEvents:
+          parsed.processedEvents && typeof parsed.processedEvents === 'object' ? parsed.processedEvents : {},
         analytics: {
           totalLogins: parsed.analytics?.totalLogins ?? 0,
           recipeViews: parsed.analytics?.recipeViews ?? {},
