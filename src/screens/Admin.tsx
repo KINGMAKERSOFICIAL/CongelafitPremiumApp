@@ -574,13 +574,6 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
               >
                 https://congelafit.store
               </button>
-              <button
-                type="button"
-                className={`chip ${appBaseUrl.trim() === 'https://app.congelafit.com.br' ? 'on' : ''}`}
-                onClick={() => setAppBaseUrl('https://app.congelafit.com.br')}
-              >
-                https://app.congelafit.com.br
-              </button>
             </div>
             <p className="hint">
               Deixe no servidor atual enquanto usar este endereço hospedado ou escolha o domínio oficial quando publicar.
