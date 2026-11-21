@@ -520,7 +520,7 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
             <a href="https://kiwify.com.br/" target="_blank" rel="noopener noreferrer" className="btn ghost sm">
               <Icon name="external" size={14} /> Abrir Kiwify
             </a>
-            <a href="https://congelafit.com.br" target="_blank" rel="noopener noreferrer" className="btn ghost sm">
+            <a href="https://congelafit.store" target="_blank" rel="noopener noreferrer" className="btn ghost sm">
               <Icon name="external" size={14} /> Site CongelaFit
             </a>
           </div>
@@ -569,10 +569,10 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
               </button>
               <button
                 type="button"
-                className={`chip ${appBaseUrl.trim() === 'https://congelafit.com.br' ? 'on' : ''}`}
-                onClick={() => setAppBaseUrl('https://congelafit.com.br')}
+                className={`chip ${appBaseUrl.trim() === 'https://congelafit.store' ? 'on' : ''}`}
+                onClick={() => setAppBaseUrl('https://congelafit.store')}
               >
-                https://congelafit.com.br
+                https://congelafit.store
               </button>
               <button
                 type="button"
@@ -608,7 +608,7 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
             <input
               id="kw-checkout"
               type="url"
-              placeholder="https://congelafit.com.br"
+              placeholder="https://congelafit.store"
               value={checkoutUrl}
               onChange={(e) => setCheckoutUrl(e.target.value)}
             />

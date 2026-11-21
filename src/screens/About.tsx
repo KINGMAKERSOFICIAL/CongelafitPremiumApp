@@ -72,7 +72,7 @@ export function About() {
       </ul>
 
       <p>
-        Para mais dicas e planos, visite <a href="https://www.congelafit.com.br">www.congelafit.com.br</a>.
+        Para mais dicas e planos, visite <a href="https://congelafit.store">congelafit.store</a>.
       </p>
       <h2>Acesso pessoal e conteúdo protegido</h2>
       <p>

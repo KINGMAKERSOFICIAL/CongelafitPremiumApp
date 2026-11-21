@@ -75,7 +75,7 @@ export function Layout() {
       <footer className="foot">
         <img src={`${base}icons/logo-mark.png`} alt="" width={40} height={25} />
         <p>
-          <b>CongelaFit</b> · <a href="https://www.congelafit.com.br">www.congelafit.com.br</a>
+          <b>CongelaFit</b> · <a href="https://congelafit.store">congelafit.store</a>
         </p>
       </footer>
       <Toasts />

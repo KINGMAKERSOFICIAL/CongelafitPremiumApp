@@ -97,7 +97,7 @@ export function Label() {
                 ? 'Descongele na geladeira · Aqueça até 74 °C'
                 : 'Descongele na geladeira · Sirva gelado'}
             </p>
-            <footer>www.congelafit.com.br</footer>
+            <footer>congelafit.store</footer>
           </article>
         ))}
       </div>

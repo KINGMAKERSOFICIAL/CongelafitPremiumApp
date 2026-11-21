@@ -35,7 +35,7 @@ function defaultDatabase(): Database {
     settings: {
       appBaseUrl: (process.env.APP_URL || process.env.PUBLIC_URL || '').replace(/\/+$/, ''),
       kiwifyWebhookToken: process.env.KIWIFY_WEBHOOK_TOKEN || crypto.randomBytes(16).toString('hex'),
-      kiwifyCheckoutUrl: process.env.KIWIFY_CHECKOUT_URL || 'https://congelafit.com.br',
+      kiwifyCheckoutUrl: process.env.KIWIFY_CHECKOUT_URL || 'https://congelafit.store',
       kiwifyAffiliateInviteUrl: process.env.KIWIFY_AFFILIATE_INVITE_URL || 'https://kiwify.com.br/',
       updatedAt: now,
     },
@@ -62,8 +62,17 @@ export function loadDb(): Database {
       const parsed = JSON.parse(raw) as Partial<Database>;
       const def = defaultDatabase();
       const mergedSettings = { ...def.settings, ...(parsed.settings ?? {}) };
+      // Endereço antigo do site (com.br) → novo domínio (.store), só quando o valor salvo é exatamente o antigo.
+      const OLD_SITES = new Set([
+        'https://congelafit.com.br',
+        'https://congelafit.com.br/',
+        'https://www.congelafit.com.br',
+        'https://www.congelafit.com.br/',
+      ]);
+      if (OLD_SITES.has(mergedSettings.kiwifyCheckoutUrl)) mergedSettings.kiwifyCheckoutUrl = 'https://congelafit.store';
+      if (mergedSettings.appBaseUrl && OLD_SITES.has(mergedSettings.appBaseUrl)) mergedSettings.appBaseUrl = 'https://congelafit.store';
       if (!mergedSettings.kiwifyCheckoutUrl || mergedSettings.kiwifyCheckoutUrl === 'https://pay.kiwify.com.br/') {
-        mergedSettings.kiwifyCheckoutUrl = 'https://congelafit.com.br';
+        mergedSettings.kiwifyCheckoutUrl = 'https://congelafit.store';
       }
       if (
         !mergedSettings.kiwifyAffiliateInviteUrl ||

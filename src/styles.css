@@ -3239,7 +3239,7 @@ body.cf-veil .veil {
     display: none !important;
   }
   body.cf-protect:not([data-printable])::before {
-    content: 'Impressão desativada. Conteúdo exclusivo dos membros do CongelaFit Premium · www.congelafit.com.br';
+    content: 'Impressão desativada. Conteúdo exclusivo dos membros do CongelaFit Premium · congelafit.store';
     display: block;
     padding: 30mm 15mm;
     text-align: center;

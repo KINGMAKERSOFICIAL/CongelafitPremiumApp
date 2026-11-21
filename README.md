@@ -2,7 +2,7 @@
 
 App web (PWA) para organizar marmitas congeladas: **Meu Freezer** com validade, **Planner** da semana, **Lista de compras** automática e **506 receitas** (396 low carb, 19 de café da manhã para congelar, 30 de almoço para congelar, 16 lanches para congelar, 22 lanches para levar no trabalho, 18 doces saudáveis e 5 marinadas rápidas) com foto, calorias e modo de preparo. Funciona offline e pode ser instalado na tela inicial do celular.
 
-Site: [www.congelafit.com.br](https://www.congelafit.com.br)
+Site: [congelafit.store](https://congelafit.store)
 
 ## O que tem
 

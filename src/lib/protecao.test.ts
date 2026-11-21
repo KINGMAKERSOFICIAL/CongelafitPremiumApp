@@ -8,7 +8,7 @@ import { buildShoppingPdf, pdfText } from './shoppingPdf';
 describe('convite e links', () => {
   it('o link da página de vendas leva UTMs', () => {
     const u = new URL(salesLink('lista', 'compartilhar'));
-    expect(u.origin).toBe('https://www.congelafit.com.br');
+    expect(u.origin).toBe('https://congelafit.store');
     expect(u.searchParams.get('utm_source')).toBe('app');
     expect(u.searchParams.get('utm_medium')).toBe('lista');
     expect(u.searchParams.get('utm_campaign')).toBe('compartilhar');
@@ -20,13 +20,13 @@ describe('convite e links', () => {
   });
   it('o rodapé do WhatsApp convida, tem o link e não promete resultado', () => {
     const t = shoppingInviteFooter().join('\n');
-    expect(t).toContain('https://www.congelafit.com.br/?utm_source=app');
+    expect(t).toContain('https://congelafit.store/?utm_source=app');
     expect(t).toContain('CongelaFit Premium');
     expect(t).not.toMatch(/emagre|cura|garant|milagre|sem risco|últimas vagas|só hoje/i);
   });
   it('o aviso de cópia bloqueada leva o link e nenhum conteúdo de receita', () => {
     const n = copyNotice();
-    expect(n).toContain('https://www.congelafit.com.br');
+    expect(n).toContain('https://congelafit.store');
     expect(n.length).toBeLessThan(200);
   });
   it('o texto da lista não carrega modo de preparo', () => {

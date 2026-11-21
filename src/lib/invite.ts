@@ -1,8 +1,8 @@
 import { RECIPES } from '../data';
 
 /** Página de vendas do CongelaFit. */
-export const SALES_URL = 'https://www.congelafit.com.br';
-export const SALES_HOST = 'www.congelafit.com.br';
+export const SALES_URL = 'https://congelafit.store';
+export const SALES_HOST = 'congelafit.store';
 
 /** Link da página de vendas com UTMs (a Utmify da página de vendas lê esses parâmetros). */
 export function salesLink(medium: string, campaign = 'app'): string {

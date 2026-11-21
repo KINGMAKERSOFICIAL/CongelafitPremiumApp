@@ -145,7 +145,7 @@ export function More() {
       )}
 
       <p className="small foot-note">
-        CongelaFit Premium · <a href="https://www.congelafit.com.br">www.congelafit.com.br</a>
+        CongelaFit Premium · <a href="https://congelafit.store">congelafit.store</a>
       </p>
 
       <Sheet open={passOpen} onClose={() => setPassOpen(false)} title="Alterar senha">

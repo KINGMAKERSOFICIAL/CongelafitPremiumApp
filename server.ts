@@ -366,7 +366,7 @@ async function startServer() {
       ok: true,
       service: 'CongelaFit Premium Kiwify Webhook',
       platform: 'https://kiwify.com.br/',
-      site: 'https://congelafit.com.br',
+      site: 'https://congelafit.store',
       hostedOrigin: origins.publicOrigin,
       endpoint: '/api/webhooks/kiwify',
     });
@@ -506,7 +506,7 @@ async function startServer() {
       webhookLogs: db.webhookLogs,
       hosting: {
         ...hosting,
-        defaultSiteUrl: 'https://congelafit.com.br',
+        defaultSiteUrl: 'https://congelafit.store',
         kiwifySiteUrl: 'https://kiwify.com.br/',
       },
     });
