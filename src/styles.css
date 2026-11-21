@@ -3174,3 +3174,77 @@ h3 {
     page-break-inside: avoid;
   }
 }
+
+/* ───────── proteção do conteúdo (membros) ───────── */
+body.cf-protect {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+body.cf-protect input,
+body.cf-protect textarea,
+body.cf-protect select,
+body.cf-protect [contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+body.cf-protect img {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+.wm {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  pointer-events: none;
+  background-repeat: repeat;
+  background-size: 340px 210px;
+}
+.veil {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: #fff;
+  background: rgba(17, 29, 36, 0.93);
+  -webkit-backdrop-filter: blur(22px);
+  backdrop-filter: blur(22px);
+}
+.veil div {
+  display: grid;
+  gap: 6px;
+  padding: 24px;
+}
+.veil b {
+  font-size: 1.15rem;
+}
+.veil span {
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+body.cf-veil .veil {
+  display: flex;
+}
+
+@media print {
+  /* Páginas de receita, lista e planner não saem no papel; só a etiqueta do freezer imprime. */
+  body.cf-protect:not([data-printable]) .app {
+    display: none !important;
+  }
+  body.cf-protect:not([data-printable])::before {
+    content: 'Impressão desativada. Conteúdo exclusivo dos membros do CongelaFit Premium · www.congelafit.com.br';
+    display: block;
+    padding: 30mm 15mm;
+    text-align: center;
+    font: 700 16pt/1.4 Arial, Helvetica, sans-serif;
+    color: #111d24;
+  }
+  .wm,
+  .veil {
+    display: none !important;
+  }
+}

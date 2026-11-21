@@ -11,11 +11,10 @@ import { addShopRecipe, usePlan, useShop } from '../lib/hooks';
 import { trackEvent } from '../lib/api';
 import { SLOTS, addTo, MAX_PER_SLOT, recipesIn, type Slot } from '../lib/planner';
 import { scaleIngredient, formatNum } from '../lib/scale';
-import { shareOrWhatsApp } from '../lib/share';
 import { useMarks } from '../lib/store';
 import { toast } from '../lib/toast';
 import { basisLabel, plural } from '../lib/text';
-import type { Group, Recipe as RecipeT } from '../types';
+import type { Group } from '../types';
 import { NotFound } from './NotFound';
 
 const FACTORS = [
@@ -53,23 +52,6 @@ function useWakeLock() {
     };
   }, [on, supported]);
   return { on, supported, toggle: () => setOn((v) => !v) };
-}
-
-function shareText(r: RecipeT, groups: Group[], rendeText: string | null, steps: string[]): string {
-  const url = `${location.origin}${location.pathname}#/receita/${r.id}`;
-  const lines = [`*${r.title}*`];
-  const meta = [`${r.kcal} kcal ${basisLabel(r.basis)}`];
-  if (rendeText) meta.push(`Rende ${rendeText}`);
-  if (r.time) meta.push(`Tempo ${r.time}`);
-  lines.push(meta.join(' · '), '', '*Ingredientes*');
-  for (const g of groups) {
-    if (g.label) lines.push(`_${g.label}_`);
-    for (const i of g.items) lines.push(`• ${i}`);
-  }
-  lines.push('', '*Modo de preparo*');
-  steps.forEach((s, i) => lines.push(`${i + 1}. ${s}`));
-  lines.push('', `CongelaFit Premium · ${url}`);
-  return lines.join('\n');
 }
 
 export function Recipe() {
@@ -118,8 +100,6 @@ export function Recipe() {
     r.rende && rendeN ? `${formatNum(rendeN)} ${plural(rendeN, r.rende.one, r.rende.many)}` : null;
   const totalItems = groups.reduce((n, g) => n + g.items.length, 0);
 
-  const share = () => void shareOrWhatsApp(r.title, shareText(r, scaled, rendeText, r.steps));
-
   const rule = freezeRuleFor(r);
   const toShopping = () => {
     shop.setRec((cur) => addShopRecipe(cur, r.id, factor));
@@ -161,9 +141,6 @@ export function Recipe() {
           <Icon name="back" />
         </button>
         <div className="recipe-actions">
-          <button type="button" className="icon-btn" onClick={share} aria-label="Compartilhar receita">
-            <Icon name="share" />
-          </button>
           <FavButton id={r.id} title={r.title} className="icon-btn" />
         </div>
       </div>

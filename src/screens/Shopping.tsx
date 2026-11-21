@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Icon } from '../components/Icon';
 import { RecipePicker } from '../components/RecipePicker';
@@ -6,7 +6,7 @@ import { ConfirmSheet } from '../components/Sheet';
 import { getRecipe } from '../data';
 import { addShopRecipe, useShopLines } from '../lib/hooks';
 import { formatAmounts, groupBySection, parseLine, shareText, type ShopLine } from '../lib/shopping';
-import { shareOrWhatsApp } from '../lib/share';
+import { shareShoppingList } from '../lib/share';
 import { uid } from '../lib/store';
 import { toast } from '../lib/toast';
 
@@ -20,6 +20,24 @@ export function Shopping() {
   const [confirm, setConfirm] = useState(false);
 
   const groups = useMemo(() => groupBySection(lines), [lines]);
+  const message = useMemo(() => shareText(groups, checked), [groups, checked]);
+
+  // O PDF é gerado antes do toque (o menu de compartilhar do celular exige que o envio saia logo após o toque).
+  const pdfCache = useRef<{ key: string; blob: Promise<Blob> } | null>(null);
+  const pdfFor = (): Promise<Blob> => {
+    if (pdfCache.current?.key === message) return pdfCache.current.blob;
+    const blob = import('../lib/shoppingPdf').then((m) => m.buildShoppingPdf(groups, checked));
+    pdfCache.current = { key: message, blob };
+    blob.catch(() => {
+      if (pdfCache.current?.blob === blob) pdfCache.current = null;
+    });
+    return blob;
+  };
+  useEffect(() => {
+    if (lines.length === 0) return;
+    const t = setTimeout(() => void pdfFor().catch(() => undefined), 500);
+    return () => clearTimeout(t);
+  }, [message]);
   const total = lines.length;
   const done = total - open;
   const pct = total ? Math.round((done / total) * 100) : 0;
@@ -58,7 +76,11 @@ export function Shopping() {
             className="icon-btn"
             aria-label="Compartilhar lista de compras"
             disabled={total === 0}
-            onClick={() => void shareOrWhatsApp('Lista de compras', shareText(groups, checked))}
+            onClick={() =>
+              void shareShoppingList(message, pdfFor()).catch(() =>
+                toast('Não foi possível gerar o PDF agora. Tente de novo.'),
+              )
+            }
           >
             <Icon name="share" />
           </button>

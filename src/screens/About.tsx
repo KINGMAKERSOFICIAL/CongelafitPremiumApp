@@ -74,6 +74,13 @@ export function About() {
       <p>
         Para mais dicas e planos, visite <a href="https://www.congelafit.com.br">www.congelafit.com.br</a>.
       </p>
+      <h2>Acesso pessoal e conteúdo protegido</h2>
+      <p>
+        As receitas são de uso exclusivo de quem comprou o acesso. Por isso o app mostra seu e-mail de forma
+        discreta sobre as telas, desativa cópia e impressão e cobre a tela quando você troca de aplicativo. A
+        única coisa que dá para compartilhar é a <b>Lista de compras</b> (texto e PDF), pelo botão de
+        compartilhar. A etiqueta do freezer continua imprimindo normalmente.
+      </p>
       <p className="small">
         Os valores nutricionais e os prazos de validade são estimativas e não substituem a orientação de um
         nutricionista.
