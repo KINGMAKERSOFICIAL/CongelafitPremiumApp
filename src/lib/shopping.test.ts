@@ -129,7 +129,7 @@ describe('shopping: somar e separar por seção', () => {
     expect(t).toContain('*Hortifrúti*');
     expect(t).toContain('• Peito de frango — 800 g');
     expect(t).not.toContain('Ovos');
-    expect(t).toContain('https://congelafit.store/?utm_source=app');
+    expect(t).toContain('https://www.congelafit.com.br/?utm_source=app');
     expect(t).toContain('CongelaFit Premium');
   });
   it('lata vai para conservas mesmo sendo ervilha/milho', () => {

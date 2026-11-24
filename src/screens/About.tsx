@@ -1,7 +1,11 @@
 import { Link } from 'react-router-dom';
 import { CATEGORIES, RECIPES } from '../data';
+import { useAuth } from '../lib/auth';
 
 export function About() {
+  const { config } = useAuth();
+  const siteUrl = config.officialSiteUrl || 'https://www.congelafit.com.br';
+  const siteHost = siteUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '');
   return (
     <div className="page prose">
       <header className="page-head">
@@ -72,7 +76,7 @@ export function About() {
       </ul>
 
       <p>
-        Para mais dicas e planos, visite <a href="https://congelafit.store">congelafit.store</a>.
+        Para mais dicas e planos, visite <a href={siteUrl}>{siteHost}</a>.
       </p>
       <h2>Acesso pessoal e conteúdo protegido</h2>
       <p>

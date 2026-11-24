@@ -36,10 +36,30 @@ interface AnalyticsPayload {
 }
 
 interface KiwifySettings {
+  officialSiteUrl?: string;
   appBaseUrl?: string;
   kiwifyWebhookToken: string;
   kiwifyCheckoutUrl: string;
   kiwifyAffiliateInviteUrl: string;
+  kiwifyClientId?: string;
+  kiwifyAccountId?: string;
+  kiwifyProductId?: string;
+  kiwifyLastSyncAt?: string | null;
+  hasKiwifyClientSecret?: boolean;
+  emailProvider?: 'auto' | 'smtp' | 'resend' | 'outbox';
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpSecure?: boolean;
+  smtpUser?: string;
+  hasSmtpPass?: boolean;
+  hasResendKey?: boolean;
+  emailFromName?: string;
+  emailFromAddress?: string;
+  sendSuspensionEmail?: boolean;
+  activeEmailProvider?: 'smtp' | 'resend' | 'outbox';
+  envEmailConfigured?: boolean;
+  envKiwifyApiConfigured?: boolean;
+  kiwifyApiConfigured?: boolean;
   updatedAt: string;
 }
 
@@ -61,16 +81,32 @@ interface WebhookLog {
   detail: string;
 }
 
+interface EmailLogItem {
+  id: string;
+  sentAt: string;
+  to: string;
+  name: string;
+  type: 'welcome' | 'reactivated' | 'reset' | 'suspended' | 'test';
+  subject: string;
+  provider: 'smtp' | 'resend' | 'outbox';
+  status: 'sent' | 'failed' | 'outbox';
+  error?: string;
+}
+
 interface AdminMember {
   id: string;
   email: string;
   name: string;
   role: 'admin' | 'member';
-  status: 'active' | 'pending' | 'refunded' | 'canceled';
+  status: 'active' | 'pending' | 'suspended' | 'refunded' | 'canceled';
   needsPasswordSetup: boolean;
+  mustChangePassword?: boolean;
   loginCount: number;
   kiwifyOrderId: string;
   kiwifyProduct: string;
+  suspendedReason?: string;
+  accessEmailSentAt?: string | null;
+  accessEmailStatus?: 'sent' | 'failed' | 'outbox' | null;
   lastLoginAt: string | null;
   createdAt: string;
 }
@@ -91,9 +127,18 @@ interface AdminProduct {
 
 const STATUS_LABEL: Record<string, string> = {
   active: 'Ativo',
-  pending: 'Pendente',
+  pending: 'Aguardando pgto',
+  suspended: 'Suspenso (não pago)',
   refunded: 'Reembolsado',
   canceled: 'Cancelado',
+};
+
+const EMAIL_TYPE_LABEL: Record<string, string> = {
+  welcome: 'Boas-vindas + Senha',
+  reactivated: 'Reativação',
+  reset: 'Nova senha',
+  suspended: 'Aviso suspensão',
+  test: 'Teste',
 };
 
 export function Admin() {
@@ -151,7 +196,7 @@ export function Admin() {
           className={`tab ${tab === 'kiwify' ? 'on' : ''}`}
           onClick={() => setTab('kiwify')}
         >
-          <Icon name="link" size={16} /> Webhook Kiwify
+          <Icon name="link" size={16} /> Kiwify, E-mail e Usuários
         </button>
         <button
           type="button"
@@ -341,18 +386,45 @@ function AnalyticsTab() {
   );
 }
 
-/* ═════════ ABA 2: WEBHOOK KIWIFY & MEMBROS ═════════ */
+/* ═════════ ABA 2: KIWIFY, E-MAIL AUTOMÁTICO & USUÁRIOS ═════════ */
 function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }) {
   const [settings, setSettings] = useState<KiwifySettings | null>(null);
   const [hosting, setHosting] = useState<KiwifyHosting | null>(null);
   const [logs, setLogs] = useState<WebhookLog[]>([]);
+  const [emailLogs, setEmailLogs] = useState<EmailLogItem[]>([]);
   const [members, setMembers] = useState<AdminMember[]>([]);
+
+  // Domínio oficial, Webhook e Links
+  const [officialSiteUrl, setOfficialSiteUrl] = useState('https://www.congelafit.com.br');
   const [appBaseUrl, setAppBaseUrl] = useState('');
   const [token, setToken] = useState('');
   const [checkoutUrl, setCheckoutUrl] = useState('');
   const [affiliateInviteUrl, setAffiliateInviteUrl] = useState('');
+
+  // API Direta Kiwify (OAuth)
+  const [kiwifyClientId, setKiwifyClientId] = useState('');
+  const [kiwifyClientSecret, setKiwifyClientSecret] = useState('');
+  const [kiwifyAccountId, setKiwifyAccountId] = useState('');
+  const [kiwifyProductId, setKiwifyProductId] = useState('');
+
+  // Configuração de E-mail (SMTP / Resend)
+  const [emailProvider, setEmailProvider] = useState<'auto' | 'smtp' | 'resend' | 'outbox'>('auto');
+  const [smtpHost, setSmtpHost] = useState('');
+  const [smtpPort, setSmtpPort] = useState('587');
+  const [smtpSecure, setSmtpSecure] = useState(false);
+  const [smtpUser, setSmtpUser] = useState('');
+  const [smtpPass, setSmtpPass] = useState('');
+  const [resendApiKey, setResendApiKey] = useState('');
+  const [emailFromName, setEmailFromName] = useState('CongelaFit Premium');
+  const [emailFromAddress, setEmailFromAddress] = useState('');
+  const [sendSuspensionEmail, setSendSuspensionEmail] = useState(true);
+
   const [saving, setSaving] = useState(false);
   const [probing, setProbing] = useState(false);
+  const [testingApi, setTestingApi] = useState(false);
+  const [syncingSales, setSyncingSales] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
+  const [testEmailDest, setTestEmailDest] = useState('');
   const [err, setErr] = useState('');
 
   // Simular webhook
@@ -364,19 +436,48 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
   const [newPass, setNewPass] = useState('');
+  const [autoGenPass, setAutoGenPass] = useState(true);
+  const [sendWelcomeEmail, setSendWelcomeEmail] = useState(true);
+
+  // Filtro de usuários e senha gerada exibida uma única vez ao Admin
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'pending' | 'suspended' | 'inactive'>('all');
+  const [issuedAccess, setIssuedAccess] = useState<{
+    email: string;
+    password: string;
+    emailStatus?: string;
+    emailError?: string;
+  } | null>(null);
 
   const loadAll = useCallback(async () => {
     const [kiwify, mem] = await Promise.all([
-      apiFetch<{ settings: KiwifySettings; webhookLogs: WebhookLog[]; hosting?: KiwifyHosting }>('/api/admin/kiwify'),
+      apiFetch<{
+        settings: KiwifySettings;
+        webhookLogs: WebhookLog[];
+        emailLogs: EmailLogItem[];
+        hosting?: KiwifyHosting;
+      }>('/api/admin/kiwify'),
       apiFetch<{ members: AdminMember[] }>('/api/admin/members'),
     ]);
     setSettings(kiwify.settings);
     setHosting(kiwify.hosting ?? null);
     setLogs(kiwify.webhookLogs);
+    setEmailLogs(kiwify.emailLogs ?? []);
+    setOfficialSiteUrl(kiwify.settings.officialSiteUrl ?? 'https://www.congelafit.com.br');
     setAppBaseUrl(kiwify.settings.appBaseUrl ?? '');
     setToken(kiwify.settings.kiwifyWebhookToken);
     setCheckoutUrl(kiwify.settings.kiwifyCheckoutUrl);
     setAffiliateInviteUrl(kiwify.settings.kiwifyAffiliateInviteUrl);
+    setKiwifyClientId(kiwify.settings.kiwifyClientId ?? '');
+    setKiwifyAccountId(kiwify.settings.kiwifyAccountId ?? '');
+    setKiwifyProductId(kiwify.settings.kiwifyProductId ?? '');
+    setEmailProvider(kiwify.settings.emailProvider ?? 'auto');
+    setSmtpHost(kiwify.settings.smtpHost ?? '');
+    setSmtpPort(String(kiwify.settings.smtpPort ?? 587));
+    setSmtpSecure(Boolean(kiwify.settings.smtpSecure));
+    setSmtpUser(kiwify.settings.smtpUser ?? '');
+    setEmailFromName(kiwify.settings.emailFromName ?? 'CongelaFit Premium');
+    setEmailFromAddress(kiwify.settings.emailFromAddress ?? '');
+    setSendSuspensionEmail(kiwify.settings.sendSuspensionEmail !== false);
     setMembers(mem.members);
   }, []);
 
@@ -397,15 +498,33 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
       await apiFetch('/api/admin/kiwify', {
         method: 'PUT',
         body: JSON.stringify({
+          officialSiteUrl: officialSiteUrl.trim().replace(/\/+$/, ''),
           appBaseUrl: appBaseUrl.trim().replace(/\/+$/, ''),
           kiwifyWebhookToken: token.trim(),
           kiwifyCheckoutUrl: checkoutUrl.trim(),
           kiwifyAffiliateInviteUrl: affiliateInviteUrl.trim(),
+          kiwifyClientId: kiwifyClientId.trim(),
+          kiwifyClientSecret: kiwifyClientSecret.trim() || undefined,
+          kiwifyAccountId: kiwifyAccountId.trim(),
+          kiwifyProductId: kiwifyProductId.trim(),
+          emailProvider,
+          smtpHost: smtpHost.trim(),
+          smtpPort: Number(smtpPort) || 587,
+          smtpSecure,
+          smtpUser: smtpUser.trim(),
+          smtpPass: smtpPass.trim() || undefined,
+          resendApiKey: resendApiKey.trim() || undefined,
+          emailFromName: emailFromName.trim() || 'CongelaFit Premium',
+          emailFromAddress: emailFromAddress.trim(),
+          sendSuspensionEmail,
         }),
       });
+      setKiwifyClientSecret('');
+      setSmtpPass('');
+      setResendApiKey('');
       await loadAll();
       await onConfigChanged();
-      toast('Configurações da Kiwify salvas.');
+      toast('Configurações salvas com sucesso.');
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : 'Erro ao salvar configurações.');
     } finally {
@@ -420,12 +539,12 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
     setToken(hex);
   };
 
-  const copyUrl = async (url: string, label: string) => {
+  const copyText = async (text: string, label: string) => {
     try {
-      await navigator.clipboard.writeText(url);
-      toast(`${label} copiada.`);
+      await navigator.clipboard.writeText(text);
+      toast(`${label} copiado.`);
     } catch {
-      toast('Copie a URL exibida no campo.');
+      toast('Copie o valor exibido no campo.');
     }
   };
 
@@ -433,7 +552,7 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
     setProbing(true);
     try {
       const res = await fetch('/api/webhooks/kiwify');
-      const data = (await res.json()) as { ok?: boolean; service?: string };
+      const data = (await res.json()) as { ok?: boolean };
       if (res.ok && data.ok) {
         toast('Endpoint do Webhook ativo e respondendo (200 OK).');
       } else {
@@ -446,15 +565,77 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
     }
   };
 
+  const testKiwifyApi = async () => {
+    setTestingApi(true);
+    try {
+      const res = await apiFetch<{ message: string }>('/api/admin/kiwify/test-connection', { method: 'POST' });
+      toast(res.message);
+    } catch (e2) {
+      toast(e2 instanceof Error ? e2.message : 'Falha ao conectar na API da Kiwify.');
+    } finally {
+      setTestingApi(false);
+    }
+  };
+
+  const syncKiwifySales = async () => {
+    setSyncingSales(true);
+    try {
+      const res = await apiFetch<{ message: string }>('/api/admin/kiwify/sync', { method: 'POST' });
+      toast(res.message);
+      await loadAll();
+    } catch (e2) {
+      toast(e2 instanceof Error ? e2.message : 'Falha ao sincronizar vendas.');
+    } finally {
+      setSyncingSales(false);
+    }
+  };
+
+  const sendTestMail = async () => {
+    setTestingEmail(true);
+    try {
+      const res = await apiFetch<{ ok: boolean; status: string; provider: string; error?: string }>(
+        '/api/admin/email/test',
+        {
+          method: 'POST',
+          body: JSON.stringify({ to: testEmailDest.trim() }),
+        },
+      );
+      if (res.status === 'sent') {
+        toast(`E-mail de teste enviado via ${res.provider.toUpperCase()}!`);
+      } else if (res.status === 'outbox') {
+        toast('Modo teste local ativo: configure SMTP ou Resend para envio real.');
+      } else {
+        toast(res.error || 'Falha no envio do e-mail de teste.');
+      }
+      await loadAll();
+    } catch (e2) {
+      toast(e2 instanceof Error ? e2.message : 'Erro ao enviar e-mail de teste.');
+    } finally {
+      setTestingEmail(false);
+    }
+  };
+
   const simulateWebhook = async (e: FormEvent) => {
     e.preventDefault();
     if (!testEmail.trim()) return;
     try {
-      const res = await apiFetch<{ message: string }>('/api/admin/kiwify/test', {
+      const targetEmail = testEmail.trim().toLowerCase();
+      const res = await apiFetch<{
+        message: string;
+        generatedPassword?: string;
+        emailStatus?: string;
+      }>('/api/admin/kiwify/test', {
         method: 'POST',
-        body: JSON.stringify({ email: testEmail.trim(), name: testName.trim(), event: testEvent }),
+        body: JSON.stringify({ email: targetEmail, name: testName.trim(), event: testEvent }),
       });
       toast(res.message);
+      if (res.generatedPassword) {
+        setIssuedAccess({
+          email: targetEmail,
+          password: res.generatedPassword,
+          emailStatus: res.emailStatus,
+        });
+      }
       setTestEmail('');
       await loadAll();
     } catch (e2) {
@@ -466,17 +647,64 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
     e.preventDefault();
     if (!newEmail.trim()) return;
     try {
-      await apiFetch('/api/admin/members', {
+      const targetEmail = newEmail.trim().toLowerCase();
+      const res = await apiFetch<{
+        generatedPassword?: string;
+        emailResult?: { status: string; error?: string };
+      }>('/api/admin/members', {
         method: 'POST',
-        body: JSON.stringify({ email: newEmail.trim(), name: newName.trim(), password: newPass }),
+        body: JSON.stringify({
+          email: targetEmail,
+          name: newName.trim(),
+          password: autoGenPass ? '' : newPass,
+          autoGeneratePassword: autoGenPass,
+          sendEmail: sendWelcomeEmail,
+        }),
       });
       toast('Membro adicionado!');
+      if (res.generatedPassword) {
+        setIssuedAccess({
+          email: targetEmail,
+          password: res.generatedPassword,
+          emailStatus: res.emailResult?.status,
+          emailError: res.emailResult?.error,
+        });
+      }
       setNewEmail('');
       setNewName('');
       setNewPass('');
       await loadAll();
     } catch (e2) {
       toast(e2 instanceof Error ? e2.message : 'Erro ao adicionar membro.');
+    }
+  };
+
+  const sendMemberAccess = async (member: AdminMember) => {
+    try {
+      const res = await apiFetch<{
+        generatedPassword?: string;
+        emailStatus?: string;
+        emailError?: string;
+      }>(`/api/admin/members/${member.id}/send-access`, {
+        method: 'POST',
+        body: JSON.stringify({ activate: true }),
+      });
+      if (res.generatedPassword) {
+        setIssuedAccess({
+          email: member.email,
+          password: res.generatedPassword,
+          emailStatus: res.emailStatus,
+          emailError: res.emailError,
+        });
+      }
+      toast(
+        res.emailStatus === 'sent'
+          ? `Nova senha gerada e enviada para ${member.email}!`
+          : `Nova senha gerada para ${member.email}.`,
+      );
+      await loadAll();
+    } catch (e2) {
+      toast(e2 instanceof Error ? e2.message : 'Erro ao gerar e enviar acesso.');
     }
   };
 
@@ -503,54 +731,124 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
     }
   };
 
+  const filteredMembers = useMemo(() => {
+    if (statusFilter === 'all') return members;
+    if (statusFilter === 'inactive') {
+      return members.filter((m) => m.status === 'refunded' || m.status === 'canceled');
+    }
+    return members.filter((m) => m.status === statusFilter);
+  }, [members, statusFilter]);
+
   if (!settings) {
     return (
       <div className="card pad-card">
-        <p className="small">Carregando integração Kiwify…</p>
+        <p className="small">Carregando integração Kiwify e E-mails…</p>
       </div>
     );
   }
 
   return (
     <div className="stack">
-      <section className="card pad-card stack">
-        <div className="dash-head">
-          <h2>Configuração do Webhook da Kiwify</h2>
+      {issuedAccess && (
+        <div className="callout ok" role="status">
+          <Icon name="check" size={18} />
+          <div style={{ flex: 1 }}>
+            <b>Acesso gerado para {issuedAccess.email}</b>
+            <p>
+              Senha temporária: <code>{issuedAccess.password}</code> · Envio de e-mail:{' '}
+              <b>
+                {issuedAccess.emailStatus === 'sent'
+                  ? 'Enviado para a caixa de entrada!'
+                  : issuedAccess.emailStatus === 'failed'
+                    ? `Falhou (${issuedAccess.emailError ?? 'erro SMTP'})`
+                    : 'Caixa de saída (configure SMTP/Resend abaixo para envio automático)'}
+              </b>
+            </p>
+          </div>
           <div className="table-actions">
-            <a href="https://kiwify.com.br/" target="_blank" rel="noopener noreferrer" className="btn ghost sm">
-              <Icon name="external" size={14} /> Abrir Kiwify
-            </a>
-            <a href="https://congelafit.store" target="_blank" rel="noopener noreferrer" className="btn ghost sm">
-              <Icon name="external" size={14} /> Site CongelaFit
-            </a>
+            <button
+              type="button"
+              className="btn ghost sm"
+              onClick={() => void copyText(`E-mail: ${issuedAccess.email}\nSenha: ${issuedAccess.password}`, 'Credenciais')}
+            >
+              <Icon name="copy" size={14} /> Copiar dados
+            </button>
+            <button type="button" className="btn ghost sm" onClick={() => setIssuedAccess(null)}>
+              Fechar
+            </button>
           </div>
         </div>
-        <p className="small">
-          O Webhook recebe automaticamente os eventos da <b>Kiwify</b> (<code>https://kiwify.com.br/</code>) no
-          servidor onde o <b>CongelaFit</b> está hospedado para liberar e bloquear o acesso dos compradores em tempo
-          real.
-        </p>
+      )}
 
-        <div className="field">
-          <label htmlFor="kw-url">URL do Webhook pronta para colar na Kiwify (com token)</label>
-          <div className="field-row">
-            <input id="kw-url" type="text" readOnly value={webhookUrl} />
-            <button type="button" className="btn ghost" onClick={() => void copyUrl(webhookUrl, 'URL do Webhook')}>
-              <Icon name="copy" size={16} /> Copiar URL
-            </button>
-            <button type="button" className="btn ghost" onClick={() => void testEndpointLive()} disabled={probing}>
-              <Icon name="check" size={16} /> {probing ? 'Testando…' : 'Verificar status'}
-            </button>
+      <form className="stack" onSubmit={saveSettings}>
+        {/* BLOCO 1: WEBHOOK KIWIFY */}
+        <section className="card pad-card stack">
+          <div className="dash-head">
+            <h2>1. Comunicação em Tempo Real — Webhook Kiwify</h2>
+            <div className="table-actions">
+              <a href="https://kiwify.com.br/" target="_blank" rel="noopener noreferrer" className="btn ghost sm">
+                <Icon name="external" size={14} /> Abrir Kiwify
+              </a>
+              <a
+                href={officialSiteUrl.trim() || 'https://www.congelafit.com.br'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn ghost sm"
+              >
+                <Icon name="external" size={14} /> Site CongelaFit
+              </a>
+            </div>
           </div>
-          <p className="hint">
-            Se preferir validar usando o token gerado pela própria Kiwify (assinatura HMAC-SHA1), cole{' '}
-            <code>{webhookBaseUrl}</code> na Kiwify e cole o token da Kiwify no campo abaixo.
+          <p className="small">
+            Quando o cliente compra, a Kiwify avisa este servidor automaticamente: o app <b>gera e-mail + senha</b> e
+            envia para o aluno. Se o pagamento atrasar, for recusado, cancelado ou reembolsado, a plataforma{' '}
+            <b>suspende o acesso na hora</b>.
           </p>
-        </div>
 
-        <form className="form" onSubmit={saveSettings}>
           <div className="field">
-            <label htmlFor="kw-host">Domínio onde o app CongelaFit está hospedado</label>
+            <label htmlFor="kw-url">URL do Webhook pronta para colar na Kiwify</label>
+            <div className="field-row">
+              <input id="kw-url" type="text" readOnly value={webhookUrl} />
+              <button type="button" className="btn ghost" onClick={() => void copyText(webhookUrl, 'URL do Webhook')}>
+                <Icon name="copy" size={16} /> Copiar URL
+              </button>
+              <button type="button" className="btn ghost" onClick={() => void testEndpointLive()} disabled={probing}>
+                <Icon name="check" size={16} /> {probing ? 'Testando…' : 'Verificar status'}
+              </button>
+            </div>
+            <p className="hint">
+              Se preferir validar pela assinatura HMAC-SHA1 da Kiwify, use <code>{webhookBaseUrl}</code> e cole o
+              Token gerado pela Kiwify no campo &ldquo;Token / Segredo&rdquo; abaixo.
+            </p>
+          </div>
+
+          <div className="field">
+            <label htmlFor="kw-official-site">Domínio oficial do aplicativo e site (editável a qualquer momento)</label>
+            <div className="field-row">
+              <input
+                id="kw-official-site"
+                type="url"
+                placeholder="https://www.congelafit.com.br"
+                value={officialSiteUrl}
+                onChange={(e) => setOfficialSiteUrl(e.target.value)}
+                required
+              />
+              <button
+                type="button"
+                className="btn ghost sm"
+                onClick={() => setOfficialSiteUrl('https://www.congelafit.com.br')}
+              >
+                Usar www.congelafit.com.br
+              </button>
+            </div>
+            <p className="hint">
+              Alterar este domínio atualiza automaticamente os links do rodapé, tela Sobre, etiquetas, mensagens de
+              convite e rodapé dos e-mails enviados aos alunos.
+            </p>
+          </div>
+
+          <div className="field">
+            <label htmlFor="kw-host">Domínio onde o app está hospedado (usado no link de login do e-mail)</label>
             <input
               id="kw-host"
               type="url"
@@ -564,15 +862,15 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
                 className={`chip ${!appBaseUrl.trim() || appBaseUrl.trim() === detectedPublicOrigin ? 'on' : ''}`}
                 onClick={() => setAppBaseUrl(detectedPublicOrigin)}
               >
-                Usar servidor atual ({detectedPublicOrigin.replace(/^https?:\/\//, '').slice(0, 32)}
-                {detectedPublicOrigin.replace(/^https?:\/\//, '').length > 32 ? '…' : ''})
+                Usar servidor atual ({detectedPublicOrigin.replace(/^https?:\/\//, '').slice(0, 30)}
+                {detectedPublicOrigin.replace(/^https?:\/\//, '').length > 30 ? '…' : ''})
               </button>
               <button
                 type="button"
-                className={`chip ${appBaseUrl.trim() === 'https://congelafit.store' ? 'on' : ''}`}
-                onClick={() => setAppBaseUrl('https://congelafit.store')}
+                className={`chip ${appBaseUrl.trim() === 'https://www.congelafit.com.br' ? 'on' : ''}`}
+                onClick={() => setAppBaseUrl('https://www.congelafit.com.br')}
               >
-                https://congelafit.store
+                https://www.congelafit.com.br
               </button>
               <button
                 type="button"
@@ -582,36 +880,34 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
                 https://app.congelafit.com.br
               </button>
             </div>
-            <p className="hint">
-              Deixe no servidor atual enquanto usar este endereço hospedado ou escolha o domínio oficial quando publicar.
-            </p>
           </div>
 
-          <div className="field">
-            <label htmlFor="kw-token">Token / Segredo do Webhook</label>
-            <div className="field-row">
-              <input
-                id="kw-token"
-                type="text"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                required
-              />
-              <button type="button" className="btn ghost" onClick={regenerateToken}>
-                <Icon name="reset" size={16} /> Gerar novo token
-              </button>
+          <div className="field-grid">
+            <div className="field">
+              <label htmlFor="kw-token">Token / Segredo do Webhook</label>
+              <div className="field-row">
+                <input
+                  id="kw-token"
+                  type="text"
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  required
+                />
+                <button type="button" className="btn ghost" onClick={regenerateToken}>
+                  <Icon name="reset" size={16} /> Gerar
+                </button>
+              </div>
             </div>
-          </div>
-
-          <div className="field">
-            <label htmlFor="kw-checkout">Site / Checkout do CongelaFit na Kiwify</label>
-            <input
-              id="kw-checkout"
-              type="url"
-              placeholder="https://congelafit.store"
-              value={checkoutUrl}
-              onChange={(e) => setCheckoutUrl(e.target.value)}
-            />
+            <div className="field">
+              <label htmlFor="kw-checkout">Site / Checkout do CongelaFit</label>
+              <input
+                id="kw-checkout"
+                type="url"
+                placeholder="https://www.congelafit.com.br"
+                value={checkoutUrl}
+                onChange={(e) => setCheckoutUrl(e.target.value)}
+              />
+            </div>
           </div>
 
           <div className="field">
@@ -625,6 +921,243 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
             />
           </div>
 
+          <div className="callout ok">
+            <Icon name="info" size={18} />
+            <div>
+              <b>Passo a passo na Kiwify (Webhook)</b>
+              <p>
+                1. Entre em <b>https://dashboard.kiwify.com.br</b> → <b>Apps → Webhooks → Criar Webhook</b>.
+                <br />
+                2. Cole a URL acima e selecione o produto <b>CongelaFit</b>.
+                <br />
+                3. Marque os eventos de <b>liberação</b> (<i>Compra aprovada</i>, <i>Assinatura renovada</i>) e os de{' '}
+                <b>suspensão automática</b> (<i>Compra recusada</i>, <i>Boleto/Pix gerado</i>, <i>Assinatura atrasada</i>,{' '}
+                <i>Assinatura cancelada</i>, <i>Compra reembolsada</i>, <i>Chargeback</i>).
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* BLOCO 2: API DIRETA DA KIWIFY (OAUTH 2.0) */}
+        <section className="card pad-card stack">
+          <div className="dash-head">
+            <h2>2. API Direta da Kiwify (Sincronização de Vendas OAuth)</h2>
+            <span className={`pill ${settings.kiwifyApiConfigured ? 'ok' : 'soon'}`}>
+              {settings.kiwifyApiConfigured ? 'API configurada' : 'Opcional / Não configurada'}
+            </span>
+          </div>
+          <p className="small">
+            Além do Webhook em tempo real, conecte a <b>API Pública da Kiwify</b> para consultar vendas antigas ou
+            conferir inadimplências diretamente na Kiwify com um clique.
+          </p>
+
+          <div className="field-grid">
+            <div className="field">
+              <label htmlFor="kw-account">Account ID (x-kiwify-account-id)</label>
+              <input
+                id="kw-account"
+                type="text"
+                placeholder="Ex: acc_xxxxxxxx"
+                value={kiwifyAccountId}
+                onChange={(e) => setKiwifyAccountId(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="kw-client-id">Client ID</label>
+              <input
+                id="kw-client-id"
+                type="text"
+                placeholder="Ex: client_xxxxxxxx"
+                value={kiwifyClientId}
+                onChange={(e) => setKiwifyClientId(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="kw-client-secret">
+                Client Secret {settings.hasKiwifyClientSecret && <small>(já salvo — deixe vazio para manter)</small>}
+              </label>
+              <input
+                id="kw-client-secret"
+                type="password"
+                placeholder={settings.hasKiwifyClientSecret ? '••••••••••••' : 'Cole o Client Secret da Kiwify'}
+                value={kiwifyClientSecret}
+                onChange={(e) => setKiwifyClientSecret(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="kw-product-id">ID do Produto na Kiwify (opcional — filtra só CongelaFit)</label>
+              <input
+                id="kw-product-id"
+                type="text"
+                placeholder="Deixe vazio para todos os produtos"
+                value={kiwifyProductId}
+                onChange={(e) => setKiwifyProductId(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="table-actions">
+            <button type="button" className="btn ghost" onClick={() => void testKiwifyApi()} disabled={testingApi}>
+              <Icon name="check" size={16} /> {testingApi ? 'Conectando…' : 'Testar API Kiwify'}
+            </button>
+            <button type="button" className="btn ghost" onClick={() => void syncKiwifySales()} disabled={syncingSales}>
+              <Icon name="reset" size={16} /> {syncingSales ? 'Sincronizando…' : 'Sincronizar vendas agora'}
+            </button>
+            {settings.kiwifyLastSyncAt && (
+              <span className="small">
+                Última sincronização: {new Date(settings.kiwifyLastSyncAt).toLocaleString('pt-BR')}
+              </span>
+            )}
+          </div>
+          <p className="hint">
+            Onde pegar na Kiwify: <b>Apps → API → Criar API Key</b>. Copie <b>Client ID</b>, <b>Client Secret</b> e{' '}
+            <b>Account ID</b>.
+          </p>
+        </section>
+
+        {/* BLOCO 3: ENVIO AUTOMÁTICO DE E-MAIL AOS ALUNOS */}
+        <section className="card pad-card stack">
+          <div className="dash-head">
+            <h2>3. Envio Automático de E-mail (Login e Senha ao Aluno)</h2>
+            <span className={`pill ${settings.activeEmailProvider === 'outbox' ? 'soon' : 'ok'}`}>
+              {settings.activeEmailProvider === 'smtp'
+                ? 'SMTP ativo'
+                : settings.activeEmailProvider === 'resend'
+                  ? 'Resend ativo'
+                  : 'Modo teste (Caixa de saída)'}
+            </span>
+          </div>
+          <p className="small">
+            Configure o servidor de e-mail para que cada aluno receba automaticamente na caixa de entrada seu{' '}
+            <b>e-mail</b> e <b>senha gerada</b> assim que o pagamento for confirmado.
+          </p>
+
+          <div className="field-grid">
+            <div className="field">
+              <label htmlFor="mail-prov">Provedor de disparo</label>
+              <select
+                id="mail-prov"
+                value={emailProvider}
+                onChange={(e) => setEmailProvider(e.target.value as 'auto' | 'smtp' | 'resend' | 'outbox')}
+              >
+                <option value="auto">Automático (usa Resend ou SMTP se configurados)</option>
+                <option value="smtp">SMTP (Gmail, Brevo, Hostinger, Zoho)</option>
+                <option value="resend">Resend API (recomendado para produção)</option>
+                <option value="outbox">Apenas caixa de saída local (teste)</option>
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="mail-from-name">Nome do remetente</label>
+              <input
+                id="mail-from-name"
+                type="text"
+                value={emailFromName}
+                onChange={(e) => setEmailFromName(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="mail-from-addr">E-mail remetente (From)</label>
+              <input
+                id="mail-from-addr"
+                type="email"
+                placeholder="acesso@congelafit.com.br ou seu@gmail.com"
+                value={emailFromAddress}
+                onChange={(e) => setEmailFromAddress(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="field-grid">
+            <div className="field">
+              <label htmlFor="smtp-host">Servidor SMTP (Host)</label>
+              <input
+                id="smtp-host"
+                type="text"
+                placeholder="Ex: smtp.gmail.com ou smtp-relay.brevo.com"
+                value={smtpHost}
+                onChange={(e) => setSmtpHost(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="smtp-port">Porta SMTP</label>
+              <input
+                id="smtp-port"
+                type="number"
+                placeholder="587"
+                value={smtpPort}
+                onChange={(e) => setSmtpPort(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="smtp-user">Usuário SMTP</label>
+              <input
+                id="smtp-user"
+                type="text"
+                placeholder="seuemail@gmail.com"
+                value={smtpUser}
+                onChange={(e) => setSmtpUser(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="smtp-pass">
+                Senha SMTP / App Password {settings.hasSmtpPass && <small>(já salva — vazio mantém)</small>}
+              </label>
+              <input
+                id="smtp-pass"
+                type="password"
+                placeholder={settings.hasSmtpPass ? '••••••••••••' : 'Senha de aplicativo SMTP'}
+                value={smtpPass}
+                onChange={(e) => setSmtpPass(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="field-grid">
+            <div className="field">
+              <label htmlFor="resend-key">
+                Resend API Key (alternativa ao SMTP){' '}
+                {settings.hasResendKey && <small>(já salva — vazio mantém)</small>}
+              </label>
+              <input
+                id="resend-key"
+                type="password"
+                placeholder={settings.hasResendKey ? '••••••••••••' : 're_xxxxxxxx...'}
+                value={resendApiKey}
+                onChange={(e) => setResendApiKey(e.target.value)}
+              />
+            </div>
+            <div className="field" style={{ justifyContent: 'flex-end' }}>
+              <label className="check-inline">
+                <input
+                  type="checkbox"
+                  checked={smtpSecure}
+                  onChange={(e) => setSmtpSecure(e.target.checked)}
+                />
+                <span>Usar SSL/TLS direto (porta 465)</span>
+              </label>
+              <label className="check-inline" style={{ marginTop: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={sendSuspensionEmail}
+                  onChange={(e) => setSendSuspensionEmail(e.target.checked)}
+                />
+                <span>Avisar o aluno por e-mail quando o acesso for suspenso</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="field-row">
+            <input
+              type="email"
+              placeholder="E-mail para receber um teste agora (ex: seuemail@gmail.com)"
+              value={testEmailDest}
+              onChange={(e) => setTestEmailDest(e.target.value)}
+            />
+            <button type="button" className="btn ghost" onClick={() => void sendTestMail()} disabled={testingEmail}>
+              <Icon name="send" size={16} /> {testingEmail ? 'Enviando…' : 'Enviar e-mail de teste'}
+            </button>
+          </div>
+
           {err && (
             <p className="form-err" role="alert">
               {err}
@@ -633,28 +1166,19 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
 
           <div className="form-actions">
             <button type="submit" className="btn" disabled={saving}>
-              <Icon name="check" size={17} /> {saving ? 'Salvando…' : 'Salvar configurações Kiwify'}
+              <Icon name="check" size={17} /> {saving ? 'Salvando…' : 'Salvar todas as configurações'}
             </button>
           </div>
-        </form>
+        </section>
+      </form>
 
-        <div className="callout ok">
-          <Icon name="info" size={18} />
-          <div>
-            <b>Como ativar na Kiwify (https://kiwify.com.br/)</b>
-            <p>
-              No painel da Kiwify, vá em <b>Apps → Webhooks → Criar Webhook</b>, cole a URL acima, selecione o produto{' '}
-              <b>CongelaFit</b> e marque os eventos: <b>Compra aprovada</b>, <b>Compra reembolsada</b>,{' '}
-              <b>Chargeback</b>, <b>Assinatura cancelada</b>, <b>Assinatura atrasada</b> e <b>Assinatura renovada</b>.
-            </p>
-          </div>
-        </div>
-      </section>
-
+      {/* BLOCO 4: SIMULADOR + CRIAÇÃO MANUAL */}
       <div className="admin-two">
         <section className="card pad-card stack">
           <h2>Testar evento Webhook</h2>
-          <p className="small">Simule uma notificação da Kiwify para testar o fluxo completo de liberação.</p>
+          <p className="small">
+            Simule uma compra aprovada (gera senha + dispara e-mail) ou um atraso/cancelamento (suspende na hora).
+          </p>
           <form className="form" onSubmit={simulateWebhook}>
             <div className="field">
               <label htmlFor="sim-email">E-mail do comprador</label>
@@ -680,24 +1204,26 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
               <div className="field">
                 <label htmlFor="sim-ev">Evento Kiwify</label>
                 <select id="sim-ev" value={testEvent} onChange={(e) => setTestEvent(e.target.value)}>
-                  <option value="order_approved">Compra aprovada (order_approved)</option>
-                  <option value="subscription_renewed">Renovação (subscription_renewed)</option>
-                  <option value="order_refunded">Reembolso (order_refunded)</option>
-                  <option value="subscription_canceled">Cancelada (subscription_canceled)</option>
+                  <option value="order_approved">Compra aprovada (gera senha + e-mail)</option>
+                  <option value="subscription_renewed">Renovação paga (reativa acesso)</option>
+                  <option value="waiting_payment">Aguardando pagamento (bloqueado)</option>
+                  <option value="subscription_late">Pagamento em atraso (suspende)</option>
+                  <option value="order_rejected">Pagamento recusado (suspende)</option>
+                  <option value="order_refunded">Reembolso (bloqueia)</option>
+                  <option value="subscription_canceled">Assinatura cancelada (bloqueia)</option>
                 </select>
               </div>
             </div>
             <button type="submit" className="btn ghost">
-              <Icon name="send" size={16} /> Disparar teste
+              <Icon name="send" size={16} /> Disparar simulação
             </button>
           </form>
         </section>
 
         <section className="card pad-card stack">
-          <h2>Liberar membro manualmente</h2>
+          <h2>Liberar usuário manualmente</h2>
           <p className="small">
-            Adicione um e-mail manualmente. Se deixar a senha vazia, o membro cria a própria senha em
-            &ldquo;Primeiro acesso&rdquo;.
+            Cadastre o aluno manualmente com geração automática de senha e envio imediato de e-mail de boas-vindas.
           </p>
           <form className="form" onSubmit={addMember}>
             <div className="field">
@@ -722,17 +1248,31 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
                   onChange={(e) => setNewName(e.target.value)}
                 />
               </div>
-              <div className="field">
-                <label htmlFor="mem-pass">Senha inicial (opcional)</label>
-                <input
-                  id="mem-pass"
-                  type="text"
-                  placeholder="Mín. 6 chars ou vazio"
-                  value={newPass}
-                  onChange={(e) => setNewPass(e.target.value)}
-                />
-              </div>
+              {!autoGenPass && (
+                <div className="field">
+                  <label htmlFor="mem-pass">Senha inicial</label>
+                  <input
+                    id="mem-pass"
+                    type="text"
+                    placeholder="Mín. 6 caracteres"
+                    value={newPass}
+                    onChange={(e) => setNewPass(e.target.value)}
+                  />
+                </div>
+              )}
             </div>
+            <label className="check-inline">
+              <input type="checkbox" checked={autoGenPass} onChange={(e) => setAutoGenPass(e.target.checked)} />
+              <span>Gerar senha segura automaticamente</span>
+            </label>
+            <label className="check-inline">
+              <input
+                type="checkbox"
+                checked={sendWelcomeEmail}
+                onChange={(e) => setSendWelcomeEmail(e.target.checked)}
+              />
+              <span>Enviar e-mail com login e senha para o aluno</span>
+            </label>
             <button type="submit" className="btn">
               <Icon name="plus" size={16} /> Liberar acesso
             </button>
@@ -740,31 +1280,77 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
         </section>
       </div>
 
+      {/* BLOCO 5: MÓDULO DE USUÁRIOS E AUTENTICAÇÃO */}
       <section className="card pad-card stack">
-        <h2>Membros cadastrados ({members.length})</h2>
+        <div className="dash-head">
+          <h2>Módulo de Usuários e Acessos ({filteredMembers.length})</h2>
+          <div className="chips compact">
+            {(
+              [
+                ['all', 'Todos'],
+                ['active', 'Ativos'],
+                ['pending', 'Pendentes'],
+                ['suspended', 'Suspensos'],
+                ['inactive', 'Cancel./Reemb.'],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={`chip ${statusFilter === key ? 'on' : ''}`}
+                onClick={() => setStatusFilter(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="table-wrap">
           <table className="admin-table">
             <thead>
               <tr>
                 <th>Usuário</th>
                 <th>Status</th>
+                <th>E-mail acesso</th>
                 <th>Logins</th>
                 <th>Ações</th>
               </tr>
             </thead>
             <tbody>
-              {members.map((m) => (
+              {filteredMembers.map((m) => (
                 <tr key={m.id}>
                   <td>
                     <b>{m.name}</b>
                     <div className="small">{m.email}</div>
                     {m.role === 'admin' && <span className="pill ok">Admin</span>}
-                    {m.needsPasswordSetup && <span className="pill soon">Aguardando senha</span>}
+                    {m.needsPasswordSetup && <span className="pill soon">Sem senha</span>}
+                    {m.mustChangePassword && <span className="pill soon">Senha temporária</span>}
+                    {m.suspendedReason && m.status !== 'active' && (
+                      <div className="small" style={{ opacity: 0.85 }}>
+                        {m.suspendedReason}
+                      </div>
+                    )}
                   </td>
                   <td>
-                    <span className={`pill ${m.status === 'active' ? 'ok' : m.status === 'pending' ? 'soon' : 'expired'}`}>
+                    <span
+                      className={`pill ${m.status === 'active' ? 'ok' : m.status === 'pending' ? 'soon' : 'expired'}`}
+                    >
                       {STATUS_LABEL[m.status] ?? m.status}
                     </span>
+                  </td>
+                  <td className="small">
+                    {m.accessEmailStatus === 'sent' ? (
+                      <span className="pill ok">Enviado</span>
+                    ) : m.accessEmailStatus === 'failed' ? (
+                      <span className="pill expired">Falhou</span>
+                    ) : m.accessEmailStatus === 'outbox' ? (
+                      <span className="pill soon">Gerado (teste)</span>
+                    ) : (
+                      '—'
+                    )}
+                    {m.accessEmailSentAt && (
+                      <div>{new Date(m.accessEmailSentAt).toLocaleDateString('pt-BR')}</div>
+                    )}
                   </td>
                   <td>{m.loginCount}</td>
                   <td>
@@ -773,18 +1359,19 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
                         <button
                           type="button"
                           className="btn ghost sm"
-                          onClick={() =>
-                            void updateMember(m.id, { status: m.status === 'active' ? 'canceled' : 'active' })
-                          }
+                          onClick={() => void sendMemberAccess(m)}
+                          title="Gera uma nova senha e envia por e-mail para o aluno"
                         >
-                          {m.status === 'active' ? 'Suspender' : 'Ativar'}
+                          <Icon name="send" size={14} /> Enviar senha
                         </button>
                         <button
                           type="button"
                           className="btn ghost sm"
-                          onClick={() => void updateMember(m.id, { resetPassword: true })}
+                          onClick={() =>
+                            void updateMember(m.id, { status: m.status === 'active' ? 'suspended' : 'active' })
+                          }
                         >
-                          Resetar senha
+                          {m.status === 'active' ? 'Suspender' : 'Reativar'}
                         </button>
                         <button
                           type="button"
@@ -806,44 +1393,86 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
         </div>
       </section>
 
-      <section className="card pad-card stack">
-        <h2>Histórico de Webhooks recebidos</h2>
-        {logs.length === 0 ? (
-          <p className="small">Nenhum webhook recebido ainda.</p>
-        ) : (
-          <div className="table-wrap">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Data/Hora</th>
-                  <th>Evento</th>
-                  <th>E-mail</th>
-                  <th>Pedido</th>
-                  <th>Resultado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {logs.slice(0, 25).map((l) => (
-                  <tr key={l.id}>
-                    <td className="small">{new Date(l.receivedAt).toLocaleString('pt-BR')}</td>
-                    <td>
-                      <code>{l.event}</code>
-                    </td>
-                    <td>{l.email}</td>
-                    <td className="small">{l.orderId}</td>
-                    <td>
-                      <span className={`pill ${l.accepted ? 'ok' : 'expired'}`}>
-                        {l.accepted ? 'Aceito' : 'Rejeitado'}
-                      </span>
-                      <div className="small">{l.detail}</div>
-                    </td>
+      {/* BLOCO 6: LOG DE E-MAILS E WEBHOOKS */}
+      <div className="admin-two">
+        <section className="card pad-card stack">
+          <h2>E-mails de Acesso Disparados</h2>
+          {emailLogs.length === 0 ? (
+            <p className="small">Nenhum disparo de e-mail registrado ainda.</p>
+          ) : (
+            <div className="table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Data/Hora</th>
+                    <th>Destinatário</th>
+                    <th>Tipo</th>
+                    <th>Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                </thead>
+                <tbody>
+                  {emailLogs.slice(0, 20).map((e) => (
+                    <tr key={e.id}>
+                      <td className="small">{new Date(e.sentAt).toLocaleString('pt-BR')}</td>
+                      <td>
+                        <div>{e.to}</div>
+                        <div className="small">{e.provider.toUpperCase()}</div>
+                      </td>
+                      <td className="small">{EMAIL_TYPE_LABEL[e.type] ?? e.type}</td>
+                      <td>
+                        <span
+                          className={`pill ${e.status === 'sent' ? 'ok' : e.status === 'outbox' ? 'soon' : 'expired'}`}
+                        >
+                          {e.status === 'sent' ? 'Enviado' : e.status === 'outbox' ? 'Caixa de saída' : 'Falha'}
+                        </span>
+                        {e.error && <div className="small">{e.error}</div>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <section className="card pad-card stack">
+          <h2>Histórico de Webhooks Kiwify</h2>
+          {logs.length === 0 ? (
+            <p className="small">Nenhum webhook recebido ainda.</p>
+          ) : (
+            <div className="table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Data/Hora</th>
+                    <th>Evento</th>
+                    <th>E-mail</th>
+                    <th>Resultado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logs.slice(0, 20).map((l) => (
+                    <tr key={l.id}>
+                      <td className="small">{new Date(l.receivedAt).toLocaleString('pt-BR')}</td>
+                      <td>
+                        <code>{l.event}</code>
+                        <div className="small">{l.orderId}</div>
+                      </td>
+                      <td>{l.email}</td>
+                      <td>
+                        <span className={`pill ${l.accepted ? 'ok' : 'expired'}`}>
+                          {l.accepted ? 'Aceito' : 'Rejeitado'}
+                        </span>
+                        <div className="small">{l.detail}</div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

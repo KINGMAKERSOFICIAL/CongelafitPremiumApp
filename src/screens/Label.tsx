@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Icon } from '../components/Icon';
 import { getRecipe } from '../data';
+import { useAuth } from '../lib/auth';
 import { fmtDate } from '../lib/dates';
 import { expiryOf, freezeRuleFor, unitText } from '../lib/freezer';
 import { useFreezer } from '../lib/hooks';
@@ -11,7 +12,11 @@ const base = import.meta.env.BASE_URL;
 
 export function Label() {
   const { id } = useParams();
+  const { config } = useAuth();
   const { items } = useFreezer();
+  const siteHost = (config.officialSiteUrl || 'https://www.congelafit.com.br')
+    .replace(/^https?:\/\//, '')
+    .replace(/\/+$/, '');
   const item = items.find((i) => i.id === id);
   const [copies, setCopies] = useState(() => item?.portions ?? 1);
   if (!item) return <NotFound />;
@@ -97,7 +102,7 @@ export function Label() {
                 ? 'Descongele na geladeira · Aqueça até 74 °C'
                 : 'Descongele na geladeira · Sirva gelado'}
             </p>
-            <footer>congelafit.store</footer>
+            <footer>{siteHost}</footer>
           </article>
         ))}
       </div>

@@ -5,9 +5,11 @@ import { useAuth } from '../lib/auth';
 
 const base = import.meta.env.BASE_URL;
 
+type AuthMode = 'login' | 'forgot' | 'first';
+
 export function Login() {
-  const { login, firstAccess, config } = useAuth();
-  const [mode, setMode] = useState<'login' | 'first'>('login');
+  const { login, firstAccess, forgotPassword, authNotice, clearAuthNotice, config } = useAuth();
+  const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
@@ -16,14 +18,35 @@ export function Login() {
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
 
+  const switchMode = (next: AuthMode) => {
+    setMode(next);
+    setError('');
+    setInfo('');
+    clearAuthNotice();
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
     setInfo('');
+    clearAuthNotice();
 
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes('@')) {
       setError('Informe um e-mail válido.');
+      return;
+    }
+
+    if (mode === 'forgot') {
+      setBusy(true);
+      try {
+        const res = await forgotPassword(cleanEmail);
+        setInfo(res.message);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Não foi possível solicitar nova senha.');
+      } finally {
+        setBusy(false);
+      }
       return;
     }
 
@@ -37,7 +60,7 @@ export function Login() {
         return;
       }
     } else if (!password) {
-      setError('Digite sua senha.');
+      setError('Digite a senha recebida por e-mail.');
       return;
     }
 
@@ -71,7 +94,7 @@ export function Login() {
             <span className="brand-name">
               CONGELA<span>FIT</span> <em>PREMIUM</em>
             </span>
-            <p className="small">Área de Membros · Acesso via Kiwify</p>
+            <p className="small">Área de Membros · Acesso integrado à Kiwify</p>
           </div>
         </div>
 
@@ -81,34 +104,45 @@ export function Login() {
             role="tab"
             aria-selected={mode === 'login'}
             className={`auth-tab ${mode === 'login' ? 'on' : ''}`}
-            onClick={() => {
-              setMode('login');
-              setError('');
-              setInfo('');
-            }}
+            onClick={() => switchMode('login')}
           >
             <Icon name="lock" size={16} /> Entrar
           </button>
           <button
             type="button"
             role="tab"
+            aria-selected={mode === 'forgot'}
+            className={`auth-tab ${mode === 'forgot' ? 'on' : ''}`}
+            onClick={() => switchMode('forgot')}
+          >
+            <Icon name="send" size={16} /> Reenviar senha
+          </button>
+          <button
+            type="button"
+            role="tab"
             aria-selected={mode === 'first'}
             className={`auth-tab ${mode === 'first' ? 'on' : ''}`}
-            onClick={() => {
-              setMode('first');
-              setError('');
-              setInfo('');
-            }}
+            onClick={() => switchMode('first')}
           >
-            <Icon name="spark" size={16} /> Primeiro acesso
+            <Icon name="spark" size={16} /> 1º acesso
           </button>
         </div>
+
+        {authNotice && (
+          <div className="callout no" role="alert">
+            <Icon name="warn" size={18} />
+            <div>
+              <b>Acesso suspenso ou desconectado</b>
+              <p>{authNotice}</p>
+            </div>
+          </div>
+        )}
 
         {info && (
           <div className="callout ok" role="status">
             <Icon name="check" size={18} />
             <div>
-              <b>Compra confirmada na Kiwify</b>
+              <b>Informação de acesso</b>
               <p>{info}</p>
             </div>
           </div>
@@ -116,7 +150,7 @@ export function Login() {
 
         <form className="form" onSubmit={handleSubmit}>
           <div className="field">
-            <label htmlFor="auth-email">E-mail da conta / compra Kiwify</label>
+            <label htmlFor="auth-email">E-mail usado na compra da Kiwify</label>
             <input
               id="auth-email"
               type="email"
@@ -142,18 +176,22 @@ export function Login() {
             </div>
           )}
 
-          <div className="field">
-            <label htmlFor="auth-pass">{mode === 'first' ? 'Crie sua senha (mín. 6 caracteres)' : 'Senha'}</label>
-            <input
-              id="auth-pass"
-              type="password"
-              autoComplete={mode === 'first' ? 'new-password' : 'current-password'}
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
+          {mode !== 'forgot' && (
+            <div className="field">
+              <label htmlFor="auth-pass">
+                {mode === 'first' ? 'Crie sua senha (mín. 6 caracteres)' : 'Senha recebida por e-mail'}
+              </label>
+              <input
+                id="auth-pass"
+                type="password"
+                autoComplete={mode === 'first' ? 'new-password' : 'current-password'}
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+          )}
 
           {mode === 'first' && (
             <div className="field">
@@ -177,16 +215,24 @@ export function Login() {
           )}
 
           <button type="submit" className="btn auth-submit" disabled={busy}>
-            <Icon name={mode === 'first' ? 'check' : 'lock'} size={18} />
-            {busy ? 'Verificando…' : mode === 'first' ? 'Ativar acesso e entrar' : 'Entrar na área de membros'}
+            <Icon name={mode === 'forgot' ? 'send' : mode === 'first' ? 'check' : 'lock'} size={18} />
+            {busy
+              ? 'Processando…'
+              : mode === 'forgot'
+                ? 'Enviar nova senha por e-mail'
+                : mode === 'first'
+                  ? 'Ativar acesso e entrar'
+                  : 'Entrar na área de membros'}
           </button>
         </form>
 
         <div className="auth-foot">
           <p className="small">
             {mode === 'login'
-              ? 'Acabou de comprar na Kiwify? Use a aba "Primeiro acesso" com o mesmo e-mail da compra para criar sua senha.'
-              : 'Seu acesso é liberado automaticamente assim que a Kiwify confirma o pagamento.'}
+              ? 'Após o pagamento na Kiwify ser aprovado, seu e-mail e senha chegam automaticamente na sua caixa de entrada (confira também o spam).'
+              : mode === 'forgot'
+                ? 'Enviaremos uma nova senha temporária para o e-mail cadastrado caso sua assinatura/compra esteja ativa.'
+                : 'Se seu pagamento na Kiwify já foi aprovado e você preferir definir sua senha agora, preencha os campos acima.'}
           </p>
           {config.kiwifyCheckoutUrl && (
             <a

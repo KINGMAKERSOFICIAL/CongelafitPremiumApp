@@ -1,5 +1,5 @@
 export type UserRole = 'admin' | 'member';
-export type MemberStatus = 'active' | 'pending' | 'refunded' | 'canceled';
+export type MemberStatus = 'active' | 'pending' | 'suspended' | 'refunded' | 'canceled';
 
 export interface StoredUser {
   id: string;
@@ -10,8 +10,15 @@ export interface StoredUser {
   role: UserRole;
   status: MemberStatus;
   needsPasswordSetup: boolean;
+  mustChangePassword?: boolean;
   kiwifyOrderId?: string;
+  kiwifySubscriptionId?: string;
   kiwifyProduct?: string;
+  nextPaymentAt?: string;
+  suspendedReason?: string;
+  accessEmailSentAt?: string;
+  accessEmailStatus?: 'sent' | 'failed' | 'outbox';
+  accessEmailError?: string;
   affiliateLink?: string;
   loginCount: number;
   lastLoginAt?: string;
@@ -51,6 +58,18 @@ export interface WebhookLog {
   detail: string;
 }
 
+export interface EmailLog {
+  id: string;
+  sentAt: string;
+  to: string;
+  name: string;
+  type: 'welcome' | 'reactivated' | 'reset' | 'suspended' | 'test';
+  subject: string;
+  provider: 'smtp' | 'resend' | 'outbox';
+  status: 'sent' | 'failed' | 'outbox';
+  error?: string;
+}
+
 export interface DailyMetric {
   logins: number;
   recipeViews: number;
@@ -58,11 +77,31 @@ export interface DailyMetric {
   referralShares: number;
 }
 
+export type EmailProviderMode = 'auto' | 'smtp' | 'resend' | 'outbox';
+
 export interface AppSettings {
+  officialSiteUrl?: string;
   appBaseUrl?: string;
   kiwifyWebhookToken: string;
   kiwifyCheckoutUrl: string;
   kiwifyAffiliateInviteUrl: string;
+  // Comunicação direta com API Pública da Kiwify (OAuth 2.0)
+  kiwifyClientId?: string;
+  kiwifyClientSecretEnc?: string;
+  kiwifyAccountId?: string;
+  kiwifyProductId?: string;
+  kiwifyLastSyncAt?: string;
+  // Envio de e-mail com credenciais aos alunos
+  emailProvider?: EmailProviderMode;
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpSecure?: boolean;
+  smtpUser?: string;
+  smtpPassEnc?: string;
+  resendApiKeyEnc?: string;
+  emailFromName?: string;
+  emailFromAddress?: string;
+  sendSuspensionEmail?: boolean;
   updatedAt: string;
 }
 
@@ -79,5 +118,6 @@ export interface Database {
   recipeImages: Record<string, RecipeImageOverride>;
   affiliateProducts: AffiliateProduct[];
   webhookLogs: WebhookLog[];
+  emailLogs: EmailLog[];
   analytics: AnalyticsData;
 }

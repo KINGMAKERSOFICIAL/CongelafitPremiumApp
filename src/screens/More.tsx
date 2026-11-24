@@ -46,7 +46,9 @@ const ITEMS = [
 ];
 
 export function More() {
-  const { user, logout, changePassword } = useAuth();
+  const { user, config, logout, changePassword } = useAuth();
+  const siteUrl = config.officialSiteUrl || 'https://www.congelafit.com.br';
+  const siteHost = siteUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '');
   const [passOpen, setPassOpen] = useState(false);
   const [curPass, setCurPass] = useState('');
   const [newPass, setNewPass] = useState('');
@@ -124,6 +126,11 @@ export function More() {
               <p className="small">
                 {user.email} · {user.role === 'admin' ? 'Administrador' : 'Membro Kiwify ativo'}
               </p>
+              {user.mustChangePassword && (
+                <p className="small" style={{ color: 'var(--brand)', marginTop: 4 }}>
+                  Você entrou com uma senha temporária. Recomendamos trocar para uma senha pessoal abaixo.
+                </p>
+              )}
             </div>
           </div>
           <div className="form-actions">
@@ -145,7 +152,7 @@ export function More() {
       )}
 
       <p className="small foot-note">
-        CongelaFit Premium · <a href="https://congelafit.store">congelafit.store</a>
+        CongelaFit Premium · <a href={siteUrl}>{siteHost}</a>
       </p>
 
       <Sheet open={passOpen} onClose={() => setPassOpen(false)} title="Alterar senha">

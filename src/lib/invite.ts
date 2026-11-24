@@ -1,13 +1,39 @@
 import { RECIPES } from '../data';
 
-/** Página de vendas do CongelaFit. */
-export const SALES_URL = 'https://congelafit.store';
-export const SALES_HOST = 'congelafit.store';
+/** Página de vendas / domínio oficial padrão do CongelaFit. */
+export const SALES_URL = 'https://www.congelafit.com.br';
+export const SALES_HOST = 'www.congelafit.com.br';
+
+let currentSiteUrl = SALES_URL;
+
+export function setOfficialSiteUrl(url: string | undefined): void {
+  const clean = (url || '').trim().replace(/\/+$/, '');
+  if (!clean) {
+    currentSiteUrl = SALES_URL;
+    return;
+  }
+  try {
+    const parsed = new URL(clean);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      currentSiteUrl = clean;
+    }
+  } catch {
+    /* mantém padrão */
+  }
+}
+
+export function getOfficialSiteUrl(): string {
+  return currentSiteUrl;
+}
+
+export function getOfficialSiteHost(): string {
+  return currentSiteUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+}
 
 /** Link da página de vendas com UTMs (a Utmify da página de vendas lê esses parâmetros). */
 export function salesLink(medium: string, campaign = 'app'): string {
   const q = new URLSearchParams({ utm_source: 'app', utm_medium: medium, utm_campaign: campaign });
-  return `${SALES_URL}/?${q.toString()}`;
+  return `${currentSiteUrl}/?${q.toString()}`;
 }
 
 /** "mais de 500": arredonda para baixo para a centena, sem inventar número. */

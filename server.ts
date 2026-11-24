@@ -5,6 +5,8 @@ import express from 'express';
 import {
   clearSessionCookie,
   createAuthMiddleware,
+  encryptSecret,
+  generateReadablePassword,
   getSessionSecret,
   hashPassword,
   publicUser,
@@ -13,6 +15,14 @@ import {
   verifyPassword,
   type AuthedRequest,
 } from './server/auth.ts';
+import { fetchKiwifyOAuthToken, fetchKiwifySalesPage, resolveKiwifyApiConfig } from './server/kiwifyApi.ts';
+import {
+  dispatchEmail,
+  resolveEmailConfig,
+  sendCredentialsEmail,
+  sendReactivatedEmail,
+  sendSuspendedEmail,
+} from './server/mailer.ts';
 import {
   DATA_DIR,
   UPLOADS_DIR,
@@ -22,7 +32,7 @@ import {
   saveUploadedImage,
   touchDailyMetric,
 } from './server/storage.ts';
-import type { AffiliateProduct, MemberStatus, StoredUser } from './server/types.ts';
+import type { AffiliateProduct, EmailProviderMode, MemberStatus, StoredUser } from './server/types.ts';
 
 const PORT = Number(process.env.PORT || 3000);
 const isProd = process.env.NODE_ENV === 'production';
@@ -58,11 +68,115 @@ function cleanText(value: unknown, max = 300): string {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
 
-function processKiwifyEvent(
+function resolveLoginUrl(settingsBaseUrl: string | undefined, fallbackOrigin?: string): string {
+  const base = (settingsBaseUrl || fallbackOrigin || 'https://www.congelafit.com.br').trim().replace(/\/+$/, '');
+  return isValidHttpUrl(base) ? base : 'https://www.congelafit.com.br';
+}
+
+function appendEmailLog(db: ReturnType<typeof loadDb>, log: Parameters<typeof dispatchEmail>[0] extends never ? never : import('./server/types.ts').EmailLog) {
+  db.emailLogs = [log, ...db.emailLogs].slice(0, 150);
+}
+
+async function provisionMemberAccess(opts: {
+  user: StoredUser;
+  secret: string;
+  loginUrl: string;
+  isReset?: boolean;
+  sendWelcomeEvenIfPasswordExists?: boolean;
+}): Promise<{
+  generatedPassword?: string;
+  emailStatus?: 'sent' | 'failed' | 'outbox';
+  emailProvider?: 'smtp' | 'resend' | 'outbox';
+  emailError?: string;
+}> {
+  const db = loadDb();
+  const shouldGenerate = opts.isReset || opts.user.needsPasswordSetup || !opts.user.passwordHash;
+  let generatedPassword: string | undefined;
+
+  if (shouldGenerate) {
+    generatedPassword = generateReadablePassword(10);
+    const { hash, salt } = hashPassword(generatedPassword);
+    opts.user.passwordHash = hash;
+    opts.user.passwordSalt = salt;
+    opts.user.needsPasswordSetup = false;
+    opts.user.mustChangePassword = true;
+    opts.user.updatedAt = new Date().toISOString();
+    saveDb(db);
+  }
+
+  if (generatedPassword) {
+    const res = await sendCredentialsEmail({
+      settings: db.settings,
+      secret: opts.secret,
+      to: opts.user.email,
+      name: opts.user.name,
+      password: generatedPassword,
+      loginUrl: opts.loginUrl,
+      productName: opts.user.kiwifyProduct,
+      isReset: opts.isReset,
+    });
+    opts.user.accessEmailSentAt = res.log.sentAt;
+    opts.user.accessEmailStatus = res.status;
+    opts.user.accessEmailError = res.error;
+    appendEmailLog(db, res.log);
+    saveDb(db);
+    return {
+      generatedPassword,
+      emailStatus: res.status,
+      emailProvider: res.provider,
+      emailError: res.error,
+    };
+  }
+
+  if (opts.sendWelcomeEvenIfPasswordExists) {
+    const res = await sendReactivatedEmail({
+      settings: db.settings,
+      secret: opts.secret,
+      to: opts.user.email,
+      name: opts.user.name,
+      loginUrl: opts.loginUrl,
+    });
+    opts.user.accessEmailSentAt = res.log.sentAt;
+    opts.user.accessEmailStatus = res.status;
+    opts.user.accessEmailError = res.error;
+    appendEmailLog(db, res.log);
+    saveDb(db);
+    return {
+      emailStatus: res.status,
+      emailProvider: res.provider,
+      emailError: res.error,
+    };
+  }
+
+  return {};
+}
+
+function suspensionReasonFor(status: MemberStatus, eventType: string): string {
+  if (status === 'pending') return 'Pagamento na Kiwify aguardando confirmação.';
+  if (status === 'refunded') return 'Compra reembolsada ou contestada (chargeback) na Kiwify.';
+  if (status === 'canceled') return 'Assinatura cancelada ou expirada na Kiwify.';
+  if (status === 'suspended') {
+    if (eventType.includes('late') || eventType.includes('atrasada') || eventType.includes('overdue')) {
+      return 'Assinatura em atraso na Kiwify. Regularize o pagamento para reativar.';
+    }
+    return 'Pagamento não aprovado ou expirado na Kiwify.';
+  }
+  return '';
+}
+
+async function processKiwifyEvent(
   rawPayload: Record<string, unknown>,
   accepted: boolean,
   detailReason: string,
-): { ok: boolean; statusCode: number; message: string } {
+  opts: { secret: string; fallbackOrigin?: string },
+): Promise<{
+  ok: boolean;
+  statusCode: number;
+  message: string;
+  generatedPassword?: string;
+  emailStatus?: 'sent' | 'failed' | 'outbox';
+  emailProvider?: 'smtp' | 'resend' | 'outbox';
+}> {
   const db = loadDb();
   const now = new Date().toISOString();
   const payload =
@@ -80,7 +194,10 @@ function processKiwifyEvent(
   const orderId = cleanText(payload.order_id ?? payload.order_ref ?? '', 80);
   const productName = cleanText(product.product_name ?? payload.product_name ?? 'CongelaFit Premium', 120);
   const rawStatus = cleanText(payload.order_status ?? subscription.status ?? '', 40).toLowerCase();
+  const subStatus = cleanText(subscription.status ?? '', 40).toLowerCase();
   const eventType = cleanText(payload.webhook_event_type ?? payload.event ?? rawStatus ?? 'webhook', 60).toLowerCase();
+  const subscriptionId = cleanText(subscription.id ?? payload.subscription_id ?? '', 80);
+  const nextPaymentAt = cleanText(subscription.next_payment ?? '', 60);
 
   const logEntry = {
     id: crypto.randomUUID(),
@@ -122,33 +239,56 @@ function processKiwifyEvent(
     targetStatus = 'refunded';
   } else if (
     [
-      'subscription_canceled',
       'subscription_late',
-      'subscription_expired',
-      'order_rejected',
-      'assinatura_cancelada',
       'assinatura_atrasada',
+      'subscription_overdue',
+      'order_rejected',
+      'order_refused',
       'compra_recusada',
+      'pix_expired',
+      'pix_expirado',
+      'billet_expired',
+      'boleto_expirado',
     ].includes(eventType) ||
-    ['canceled', 'cancelled', 'expired', 'refused'].includes(rawStatus)
+    ['refused', 'late', 'overdue', 'unpaid'].includes(rawStatus) ||
+    ['late', 'overdue', 'past_due'].includes(subStatus)
+  ) {
+    targetStatus = 'suspended';
+  } else if (
+    ['subscription_canceled', 'subscription_expired', 'assinatura_cancelada', 'assinatura_expirada'].includes(
+      eventType,
+    ) ||
+    ['canceled', 'cancelled', 'expired'].includes(rawStatus) ||
+    ['canceled', 'cancelled', 'expired'].includes(subStatus)
   ) {
     targetStatus = 'canceled';
   } else if (
-    ['waiting_payment', 'boleto_gerado', 'pix_gerado', 'pix_created', 'billet_created'].includes(eventType) ||
+    ['waiting_payment', 'boleto_gerado', 'pix_gerado', 'pix_created', 'billet_created', 'order_pending'].includes(
+      eventType,
+    ) ||
     rawStatus === 'waiting_payment'
   ) {
     targetStatus = 'pending';
   }
 
+  const loginUrl = resolveLoginUrl(db.settings.appBaseUrl, opts.fallbackOrigin);
   const existing = db.users.find((u) => u.email === email);
+  let targetUser: StoredUser | null = existing ?? null;
+  let wasNonActive = false;
+
   if (existing) {
+    wasNonActive = existing.status !== 'active';
     if (existing.role !== 'admin' && targetStatus) {
       existing.status = targetStatus;
+      existing.suspendedReason = targetStatus === 'active' ? '' : suspensionReasonFor(targetStatus, eventType);
     }
     if (name && (!existing.name || existing.name === 'Membro Kiwify')) existing.name = name;
     if (orderId) existing.kiwifyOrderId = orderId;
     if (productName) existing.kiwifyProduct = productName;
+    if (subscriptionId) existing.kiwifySubscriptionId = subscriptionId;
+    if (nextPaymentAt) existing.nextPaymentAt = nextPaymentAt;
     existing.updatedAt = now;
+    targetUser = existing;
     logEntry.detail = `Membro atualizado (${existing.status}).`;
   } else if (targetStatus) {
     const newUser: StoredUser = {
@@ -160,13 +300,18 @@ function processKiwifyEvent(
       role: 'member',
       status: targetStatus,
       needsPasswordSetup: true,
+      mustChangePassword: false,
       kiwifyOrderId: orderId || undefined,
+      kiwifySubscriptionId: subscriptionId || undefined,
       kiwifyProduct: productName || undefined,
+      nextPaymentAt: nextPaymentAt || undefined,
+      suspendedReason: targetStatus === 'active' ? '' : suspensionReasonFor(targetStatus, eventType),
       loginCount: 0,
       createdAt: now,
       updatedAt: now,
     };
     db.users.push(newUser);
+    targetUser = newUser;
     logEntry.detail = `Novo membro registrado (${targetStatus}).`;
   } else {
     logEntry.detail = `Evento registrado sem alteração de status (${eventType}).`;
@@ -174,7 +319,46 @@ function processKiwifyEvent(
 
   db.webhookLogs = [logEntry, ...db.webhookLogs].slice(0, 100);
   saveDb(db);
-  return { ok: true, statusCode: 200, message: logEntry.detail };
+
+  let provisionResult: Awaited<ReturnType<typeof provisionMemberAccess>> = {};
+  if (targetUser && targetUser.role !== 'admin') {
+    if (targetStatus === 'active') {
+      provisionResult = await provisionMemberAccess({
+        user: targetUser,
+        secret: opts.secret,
+        loginUrl,
+        sendWelcomeEvenIfPasswordExists: wasNonActive,
+      });
+      if (provisionResult.generatedPassword) {
+        logEntry.detail = `Acesso gerado e e-mail (${provisionResult.emailStatus ?? 'ok'}) para ${targetUser.email}.`;
+        saveDb(db);
+      }
+    } else if (
+      (targetStatus === 'suspended' || targetStatus === 'canceled') &&
+      !wasNonActive &&
+      db.settings.sendSuspensionEmail !== false
+    ) {
+      const suspRes = await sendSuspendedEmail({
+        settings: db.settings,
+        secret: opts.secret,
+        to: targetUser.email,
+        name: targetUser.name,
+        reason: targetUser.suspendedReason || 'Pagamento não identificado na Kiwify.',
+        checkoutUrl: db.settings.kiwifyCheckoutUrl || db.settings.officialSiteUrl || 'https://www.congelafit.com.br',
+      });
+      appendEmailLog(db, suspRes.log);
+      saveDb(db);
+    }
+  }
+
+  return {
+    ok: true,
+    statusCode: 200,
+    message: logEntry.detail,
+    generatedPassword: provisionResult.generatedPassword,
+    emailStatus: provisionResult.emailStatus,
+    emailProvider: provisionResult.emailProvider,
+  };
 }
 
 async function startServer() {
@@ -206,9 +390,18 @@ async function startServer() {
   // ───────── Autenticação e Área de Membros ─────────
   app.get('/api/auth/me', (req: AuthedRequest, res) => {
     const db = loadDb();
+    let authNotice = '';
+    if (!req.user && req.inactiveUser) {
+      clearSessionCookie(req, res);
+      authNotice =
+        req.inactiveUser.suspendedReason ||
+        'Seu acesso foi suspenso ou cancelado na Kiwify. Regularize o pagamento para continuar usando o app.';
+    }
     res.json({
       user: req.user ? publicUser(req.user) : null,
+      authNotice,
       config: {
+        officialSiteUrl: db.settings.officialSiteUrl || 'https://www.congelafit.com.br',
         kiwifyCheckoutUrl: db.settings.kiwifyCheckoutUrl,
         kiwifyAffiliateInviteUrl: db.settings.kiwifyAffiliateInviteUrl,
       },
@@ -230,17 +423,29 @@ async function startServer() {
       return;
     }
     if (user.status === 'pending') {
-      res.status(403).json({ error: 'Seu pagamento na Kiwify ainda está pendente de confirmação.' });
+      res.status(403).json({
+        error: 'Seu pagamento na Kiwify ainda está aguardando confirmação. Assim que compensar, enviaremos sua senha por e-mail.',
+      });
+      return;
+    }
+    if (user.status === 'suspended') {
+      res.status(403).json({
+        error:
+          user.suspendedReason ||
+          'Seu acesso foi suspenso por falta de pagamento na Kiwify. Regularize a cobrança para liberar novamente.',
+      });
       return;
     }
     if (user.status !== 'active') {
-      res.status(403).json({ error: 'Seu acesso pela Kiwify está inativo, cancelado ou reembolsado.' });
+      res.status(403).json({
+        error: user.suspendedReason || 'Seu acesso pela Kiwify está cancelado ou reembolsado.',
+      });
       return;
     }
     if (user.needsPasswordSetup || !user.passwordHash) {
       res.status(409).json({
         code: 'NEEDS_PASSWORD_SETUP',
-        error: 'Compra confirmada! Como é seu primeiro acesso, crie sua senha na aba "Primeiro acesso".',
+        error: 'Compra confirmada! Como você ainda não tem senha definida, crie uma agora na aba "Primeiro acesso".',
       });
       return;
     }
@@ -258,7 +463,7 @@ async function startServer() {
     saveDb(db);
 
     const token = signSession(user.id, secret);
-    setSessionCookie(res, token);
+    setSessionCookie(req, res, token);
     res.json({ token, user: publicUser(user) });
   });
 
@@ -307,12 +512,51 @@ async function startServer() {
     saveDb(db);
 
     const token = signSession(user.id, secret);
-    setSessionCookie(res, token);
+    setSessionCookie(req, res, token);
     res.json({ token, user: publicUser(user) });
   });
 
-  app.post('/api/auth/logout', (_req, res) => {
-    clearSessionCookie(res);
+  const forgotCooldown = new Map<string, number>();
+  app.post('/api/auth/forgot-password', async (req, res) => {
+    const email = normalizeEmail(req.body?.email);
+    if (!email || !email.includes('@')) {
+      res.status(400).json({ error: 'Informe um e-mail válido.' });
+      return;
+    }
+    const last = forgotCooldown.get(email) ?? 0;
+    if (Date.now() - last < 60_000) {
+      res.status(429).json({ error: 'Aguarde 1 minuto antes de solicitar outro envio para este e-mail.' });
+      return;
+    }
+    forgotCooldown.set(email, Date.now());
+
+    const db = loadDb();
+    const emailCfg = resolveEmailConfig(db.settings, secret);
+    const user = db.users.find((u) => u.email === email);
+    const origins = detectHostedOrigins(req);
+    const loginUrl = resolveLoginUrl(db.settings.appBaseUrl, origins.publicOrigin);
+
+    if (user && user.role === 'member' && user.status === 'active' && emailCfg.provider !== 'outbox') {
+      await provisionMemberAccess({
+        user,
+        secret,
+        loginUrl,
+        isReset: true,
+      });
+    }
+
+    res.json({
+      ok: true,
+      emailConfigured: emailCfg.provider !== 'outbox',
+      message:
+        emailCfg.provider !== 'outbox'
+          ? 'Se o seu e-mail estiver ativo na plataforma, enviamos uma nova senha temporária para sua caixa de entrada.'
+          : 'O envio automático de e-mail ainda não foi ativado pelo administrador. Solicite uma nova senha ao suporte.',
+    });
+  });
+
+  app.post('/api/auth/logout', (req, res) => {
+    clearSessionCookie(req, res);
     res.json({ ok: true });
   });
 
@@ -336,6 +580,8 @@ async function startServer() {
     const { hash, salt } = hashPassword(newPassword);
     user.passwordHash = hash;
     user.passwordSalt = salt;
+    user.mustChangePassword = false;
+    user.needsPasswordSetup = false;
     user.updatedAt = new Date().toISOString();
     saveDb(db);
     res.json({ ok: true });
@@ -361,18 +607,19 @@ async function startServer() {
 
   // ───────── Webhook da Kiwify (público para chamadas server-to-server da Kiwify) ─────────
   const handleKiwifyWebhookProbe = (req: express.Request, res: express.Response) => {
+    const db = loadDb();
     const origins = detectHostedOrigins(req);
     res.json({
       ok: true,
       service: 'CongelaFit Premium Kiwify Webhook',
       platform: 'https://kiwify.com.br/',
-      site: 'https://congelafit.store',
+      site: db.settings.officialSiteUrl || 'https://www.congelafit.com.br',
       hostedOrigin: origins.publicOrigin,
       endpoint: '/api/webhooks/kiwify',
     });
   };
 
-  const handleKiwifyWebhook = (req: express.Request, res: express.Response) => {
+  const handleKiwifyWebhook = async (req: express.Request, res: express.Response) => {
     const db = loadDb();
     const expectedToken = db.settings.kiwifyWebhookToken;
     const rawBody =
@@ -414,8 +661,12 @@ async function startServer() {
       else reason = 'Token ou assinatura do webhook ausente.';
     }
 
+    const origins = detectHostedOrigins(req);
     const payload = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
-    const result = processKiwifyEvent(payload, authorized, reason);
+    const result = await processKiwifyEvent(payload, authorized, reason, {
+      secret,
+      fallbackOrigin: origins.publicOrigin,
+    });
     res.status(result.statusCode).json({ ok: result.ok, message: result.message });
   };
 
@@ -481,7 +732,9 @@ async function startServer() {
         totalMembers: members.length,
         activeMembers: members.filter((m) => m.status === 'active').length,
         pendingMembers: members.filter((m) => m.status === 'pending').length,
-        inactiveMembers: members.filter((m) => m.status === 'refunded' || m.status === 'canceled').length,
+        inactiveMembers: members.filter(
+          (m) => m.status === 'suspended' || m.status === 'refunded' || m.status === 'canceled',
+        ).length,
         totalLogins: db.analytics.totalLogins,
         totalRecipeViews,
         totalProductClicks,
@@ -501,12 +754,41 @@ async function startServer() {
   app.get('/api/admin/kiwify', requireAdmin, (req, res) => {
     const db = loadDb();
     const hosting = detectHostedOrigins(req);
+    const emailCfg = resolveEmailConfig(db.settings, secret);
+    const apiCfg = resolveKiwifyApiConfig(db.settings, secret);
     res.json({
-      settings: db.settings,
+      settings: {
+        officialSiteUrl: db.settings.officialSiteUrl || 'https://www.congelafit.com.br',
+        appBaseUrl: db.settings.appBaseUrl ?? '',
+        kiwifyWebhookToken: db.settings.kiwifyWebhookToken,
+        kiwifyCheckoutUrl: db.settings.kiwifyCheckoutUrl,
+        kiwifyAffiliateInviteUrl: db.settings.kiwifyAffiliateInviteUrl,
+        kiwifyClientId: db.settings.kiwifyClientId ?? '',
+        kiwifyAccountId: db.settings.kiwifyAccountId ?? '',
+        kiwifyProductId: db.settings.kiwifyProductId ?? '',
+        kiwifyLastSyncAt: db.settings.kiwifyLastSyncAt ?? null,
+        hasKiwifyClientSecret: Boolean(db.settings.kiwifyClientSecretEnc || process.env.KIWIFY_CLIENT_SECRET),
+        emailProvider: db.settings.emailProvider ?? 'auto',
+        smtpHost: db.settings.smtpHost ?? '',
+        smtpPort: db.settings.smtpPort ?? 587,
+        smtpSecure: Boolean(db.settings.smtpSecure),
+        smtpUser: db.settings.smtpUser ?? '',
+        hasSmtpPass: Boolean(db.settings.smtpPassEnc || process.env.SMTP_PASS),
+        hasResendKey: Boolean(db.settings.resendApiKeyEnc || process.env.RESEND_API_KEY),
+        emailFromName: db.settings.emailFromName ?? 'CongelaFit Premium',
+        emailFromAddress: db.settings.emailFromAddress ?? '',
+        sendSuspensionEmail: db.settings.sendSuspensionEmail !== false,
+        activeEmailProvider: emailCfg.provider,
+        envEmailConfigured: emailCfg.envConfigured,
+        envKiwifyApiConfigured: apiCfg.envConfigured,
+        kiwifyApiConfigured: apiCfg.configured,
+        updatedAt: db.settings.updatedAt,
+      },
       webhookLogs: db.webhookLogs,
+      emailLogs: db.emailLogs,
       hosting: {
         ...hosting,
-        defaultSiteUrl: 'https://congelafit.store',
+        defaultSiteUrl: 'https://www.congelafit.com.br',
         kiwifySiteUrl: 'https://kiwify.com.br/',
       },
     });
@@ -514,11 +796,16 @@ async function startServer() {
 
   app.put('/api/admin/kiwify', requireAdmin, (req, res) => {
     const db = loadDb();
+    const officialSiteUrl = cleanText(req.body?.officialSiteUrl, 300).replace(/\/+$/, '');
     const appBaseUrl = cleanText(req.body?.appBaseUrl, 300).replace(/\/+$/, '');
     const token = cleanText(req.body?.kiwifyWebhookToken, 120);
     const checkoutUrl = cleanText(req.body?.kiwifyCheckoutUrl, 500);
     const affiliateInviteUrl = cleanText(req.body?.kiwifyAffiliateInviteUrl, 500);
 
+    if (officialSiteUrl && !isValidHttpUrl(officialSiteUrl)) {
+      res.status(400).json({ error: 'Domínio oficial inválido (use https://...).' });
+      return;
+    }
     if (appBaseUrl && !isValidHttpUrl(appBaseUrl)) {
       res.status(400).json({ error: 'URL de hospedagem do app inválida (use https://...).' });
       return;
@@ -536,26 +823,233 @@ async function startServer() {
       return;
     }
 
+    if (officialSiteUrl) db.settings.officialSiteUrl = officialSiteUrl;
     db.settings.appBaseUrl = appBaseUrl;
     db.settings.kiwifyWebhookToken = token;
     db.settings.kiwifyCheckoutUrl = checkoutUrl;
     db.settings.kiwifyAffiliateInviteUrl = affiliateInviteUrl;
+
+    // Credenciais opcionais da API Pública da Kiwify
+    if (typeof req.body?.kiwifyClientId === 'string') {
+      db.settings.kiwifyClientId = cleanText(req.body.kiwifyClientId, 160);
+    }
+    if (typeof req.body?.kiwifyAccountId === 'string') {
+      db.settings.kiwifyAccountId = cleanText(req.body.kiwifyAccountId, 160);
+    }
+    if (typeof req.body?.kiwifyProductId === 'string') {
+      db.settings.kiwifyProductId = cleanText(req.body.kiwifyProductId, 160);
+    }
+    if (typeof req.body?.kiwifyClientSecret === 'string' && req.body.kiwifyClientSecret.trim()) {
+      db.settings.kiwifyClientSecretEnc = encryptSecret(req.body.kiwifyClientSecret, secret);
+    } else if (req.body?.clearKiwifyClientSecret === true) {
+      db.settings.kiwifyClientSecretEnc = '';
+    }
+
+    // Configurações de envio de e-mail (SMTP / Resend)
+    if (
+      typeof req.body?.emailProvider === 'string' &&
+      ['auto', 'smtp', 'resend', 'outbox'].includes(req.body.emailProvider)
+    ) {
+      db.settings.emailProvider = req.body.emailProvider as EmailProviderMode;
+    }
+    if (typeof req.body?.smtpHost === 'string') db.settings.smtpHost = cleanText(req.body.smtpHost, 200);
+    if (req.body?.smtpPort !== undefined) {
+      const port = Number(req.body.smtpPort);
+      if (!Number.isFinite(port) || port < 1 || port > 65535) {
+        res.status(400).json({ error: 'Porta SMTP inválida.' });
+        return;
+      }
+      db.settings.smtpPort = Math.round(port);
+    }
+    if (typeof req.body?.smtpSecure === 'boolean') db.settings.smtpSecure = req.body.smtpSecure;
+    if (typeof req.body?.smtpUser === 'string') db.settings.smtpUser = cleanText(req.body.smtpUser, 200);
+    if (typeof req.body?.smtpPass === 'string' && req.body.smtpPass.trim()) {
+      db.settings.smtpPassEnc = encryptSecret(req.body.smtpPass, secret);
+    } else if (req.body?.clearSmtpPass === true) {
+      db.settings.smtpPassEnc = '';
+    }
+    if (typeof req.body?.resendApiKey === 'string' && req.body.resendApiKey.trim()) {
+      db.settings.resendApiKeyEnc = encryptSecret(req.body.resendApiKey, secret);
+    } else if (req.body?.clearResendApiKey === true) {
+      db.settings.resendApiKeyEnc = '';
+    }
+    if (typeof req.body?.emailFromName === 'string') {
+      db.settings.emailFromName = cleanText(req.body.emailFromName, 120) || 'CongelaFit Premium';
+    }
+    if (typeof req.body?.emailFromAddress === 'string') {
+      db.settings.emailFromAddress = cleanText(req.body.emailFromAddress, 200);
+    }
+    if (typeof req.body?.sendSuspensionEmail === 'boolean') {
+      db.settings.sendSuspensionEmail = req.body.sendSuspensionEmail;
+    }
+
     db.settings.updatedAt = new Date().toISOString();
     saveDb(db);
-    res.json({ settings: db.settings });
+    res.json({ ok: true });
   });
 
-  app.post('/api/admin/kiwify/test', requireAdmin, (req, res) => {
+  app.post('/api/admin/email/test', requireAdmin, async (req: AuthedRequest, res) => {
+    const db = loadDb();
+    const to = normalizeEmail(req.body?.to) || req.user!.email;
+    if (!to || !to.includes('@')) {
+      res.status(400).json({ error: 'Informe um e-mail de destino válido para o teste.' });
+      return;
+    }
+    const origins = detectHostedOrigins(req);
+    const loginUrl = resolveLoginUrl(db.settings.appBaseUrl, origins.publicOrigin);
+    const result = await dispatchEmail({
+      settings: db.settings,
+      secret,
+      to,
+      name: 'Teste Administrador',
+      type: 'test',
+      subject: 'CongelaFit Premium — Teste de envio de e-mail',
+      html: `<p>Este é um e-mail de teste do <b>CongelaFit Premium</b>.</p><p>Link de login configurado: <a href="${loginUrl}">${loginUrl}</a></p>`,
+      text: `Este é um e-mail de teste do CongelaFit Premium. Link de login: ${loginUrl}`,
+    });
+    appendEmailLog(db, result.log);
+    saveDb(db);
+    res.status(result.ok ? 200 : 502).json({
+      ok: result.ok,
+      status: result.status,
+      provider: result.provider,
+      error: result.error,
+    });
+  });
+
+  app.post('/api/admin/kiwify/test-connection', requireAdmin, async (_req, res) => {
+    const db = loadDb();
+    const cfg = resolveKiwifyApiConfig(db.settings, secret);
+    if (!cfg.configured) {
+      res.status(400).json({ error: 'Preencha Client ID, Client Secret e Account ID da API da Kiwify e salve antes de testar.' });
+      return;
+    }
+    try {
+      await fetchKiwifyOAuthToken(cfg);
+      const { sales } = await fetchKiwifySalesPage(cfg, { pageNumber: 1, pageSize: 5 });
+      res.json({
+        ok: true,
+        message: `Conexão autenticada com a API da Kiwify! (${sales.length} venda(s) recentes encontradas na primeira página).`,
+      });
+    } catch (err) {
+      res.status(502).json({ error: err instanceof Error ? err.message : 'Erro ao conectar na API da Kiwify.' });
+    }
+  });
+
+  app.post('/api/admin/kiwify/sync', requireAdmin, async (req, res) => {
+    const db = loadDb();
+    const cfg = resolveKiwifyApiConfig(db.settings, secret);
+    if (!cfg.configured) {
+      res.status(400).json({ error: 'Configure Client ID, Client Secret e Account ID da Kiwify para sincronizar vendas.' });
+      return;
+    }
+    try {
+      const origins = detectHostedOrigins(req);
+      const loginUrl = resolveLoginUrl(db.settings.appBaseUrl, origins.publicOrigin);
+      let page = 1;
+      let totalProcessed = 0;
+      let activated = 0;
+      let suspended = 0;
+      let emailsSent = 0;
+
+      while (page <= 5) {
+        const { sales, hasMore } = await fetchKiwifySalesPage(cfg, { pageNumber: page, pageSize: 50 });
+        for (const sale of sales) {
+          totalProcessed++;
+          if (!sale.mappedStatus) continue;
+          const now = new Date().toISOString();
+          const existing = db.users.find((u) => u.email === sale.email);
+          if (existing) {
+            const prevStatus = existing.status;
+            if (existing.role !== 'admin') {
+              existing.status = sale.mappedStatus;
+              existing.suspendedReason =
+                sale.mappedStatus === 'active' ? '' : suspensionReasonFor(sale.mappedStatus, sale.rawStatus);
+            }
+            if (sale.orderId) existing.kiwifyOrderId = sale.orderId;
+            if (sale.productName) existing.kiwifyProduct = sale.productName;
+            if (sale.subscriptionId) existing.kiwifySubscriptionId = sale.subscriptionId;
+            if (sale.nextPaymentAt) existing.nextPaymentAt = sale.nextPaymentAt;
+            existing.updatedAt = now;
+            saveDb(db);
+
+            if (existing.role !== 'admin' && sale.mappedStatus === 'active') {
+              if (prevStatus !== 'active') activated++;
+              const prov = await provisionMemberAccess({
+                user: existing,
+                secret,
+                loginUrl,
+                sendWelcomeEvenIfPasswordExists: prevStatus !== 'active',
+              });
+              if (prov.emailStatus === 'sent') emailsSent++;
+            } else if (
+              existing.role !== 'admin' &&
+              (sale.mappedStatus === 'suspended' || sale.mappedStatus === 'canceled' || sale.mappedStatus === 'refunded') &&
+              prevStatus === 'active'
+            ) {
+              suspended++;
+            }
+          } else {
+            const newUser: StoredUser = {
+              id: `usr-${crypto.randomBytes(6).toString('hex')}`,
+              email: sale.email,
+              name: sale.name,
+              passwordHash: '',
+              passwordSalt: '',
+              role: 'member',
+              status: sale.mappedStatus,
+              needsPasswordSetup: true,
+              kiwifyOrderId: sale.orderId || undefined,
+              kiwifySubscriptionId: sale.subscriptionId || undefined,
+              kiwifyProduct: sale.productName || undefined,
+              nextPaymentAt: sale.nextPaymentAt || undefined,
+              suspendedReason:
+                sale.mappedStatus === 'active' ? '' : suspensionReasonFor(sale.mappedStatus, sale.rawStatus),
+              loginCount: 0,
+              createdAt: now,
+              updatedAt: now,
+            };
+            db.users.push(newUser);
+            saveDb(db);
+            if (sale.mappedStatus === 'active') {
+              activated++;
+              const prov = await provisionMemberAccess({ user: newUser, secret, loginUrl });
+              if (prov.emailStatus === 'sent') emailsSent++;
+            } else {
+              suspended++;
+            }
+          }
+        }
+        if (!hasMore || sales.length === 0) break;
+        page++;
+      }
+
+      db.settings.kiwifyLastSyncAt = new Date().toISOString();
+      saveDb(db);
+      res.json({
+        ok: true,
+        message: `Sincronização concluída: ${totalProcessed} venda(s) analisada(s), ${activated} liberação(ões), ${suspended} suspensão(ões)/cancelamento(s), ${emailsSent} e-mail(s) enviado(s).`,
+      });
+    } catch (err) {
+      res.status(502).json({ error: err instanceof Error ? err.message : 'Erro ao sincronizar vendas da Kiwify.' });
+    }
+  });
+
+  app.post('/api/admin/kiwify/test', requireAdmin, async (req, res) => {
     const email = normalizeEmail(req.body?.email);
     const name = cleanText(req.body?.name, 120) || 'Cliente Teste Kiwify';
     const event = cleanText(req.body?.event, 40) || 'order_approved';
     const statusMap: Record<string, string> = {
       order_approved: 'paid',
       subscription_renewed: 'paid',
+      waiting_payment: 'waiting_payment',
+      subscription_late: 'late',
+      order_rejected: 'refused',
       order_refunded: 'refunded',
       subscription_canceled: 'canceled',
     };
-    const result = processKiwifyEvent(
+    const origins = detectHostedOrigins(req);
+    const result = await processKiwifyEvent(
       {
         order_id: `TEST-${Date.now().toString(36).toUpperCase()}`,
         order_status: statusMap[event] ?? 'paid',
@@ -565,8 +1059,15 @@ async function startServer() {
       },
       true,
       'Simulação manual pelo Admin.',
+      { secret, fallbackOrigin: origins.publicOrigin },
     );
-    res.status(result.statusCode).json({ ok: result.ok, message: result.message });
+    res.status(result.statusCode).json({
+      ok: result.ok,
+      message: result.message,
+      generatedPassword: result.generatedPassword,
+      emailStatus: result.emailStatus,
+      emailProvider: result.emailProvider,
+    });
   });
 
   app.get('/api/admin/members', requireAdmin, (_req, res) => {
@@ -583,16 +1084,19 @@ async function startServer() {
     res.json({ members });
   });
 
-  app.post('/api/admin/members', requireAdmin, (req, res) => {
+  app.post('/api/admin/members', requireAdmin, async (req, res) => {
     const email = normalizeEmail(req.body?.email);
     const name = cleanText(req.body?.name, 120) || 'Membro CongelaFit';
-    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    let password = typeof req.body?.password === 'string' ? req.body.password.trim() : '';
+    const autoGenerate = req.body?.autoGeneratePassword === true;
+    const sendEmail = req.body?.sendEmail === true;
+
     if (!email || !email.includes('@')) {
       res.status(400).json({ error: 'Informe um e-mail válido.' });
       return;
     }
     if (password && password.length < 6) {
-      res.status(400).json({ error: 'A senha inicial precisa ter pelo menos 6 caracteres (ou deixe em branco para primeiro acesso).' });
+      res.status(400).json({ error: 'A senha inicial precisa ter pelo menos 6 caracteres.' });
       return;
     }
     const db = loadDb();
@@ -600,6 +1104,13 @@ async function startServer() {
       res.status(409).json({ error: 'Este e-mail já está cadastrado.' });
       return;
     }
+
+    let generatedPassword: string | undefined;
+    if (autoGenerate || (sendEmail && !password)) {
+      password = generateReadablePassword(10);
+      generatedPassword = password;
+    }
+
     const now = new Date().toISOString();
     const creds = password ? hashPassword(password) : { hash: '', salt: '' };
     const created: StoredUser = {
@@ -611,6 +1122,7 @@ async function startServer() {
       role: 'member',
       status: 'active',
       needsPasswordSetup: !password,
+      mustChangePassword: Boolean(generatedPassword),
       kiwifyProduct: 'Liberação manual Admin',
       loginCount: 0,
       createdAt: now,
@@ -618,7 +1130,66 @@ async function startServer() {
     };
     db.users.push(created);
     saveDb(db);
-    res.status(201).json({ member: { ...publicUser(created), needsPasswordSetup: created.needsPasswordSetup } });
+
+    let emailResult: { status: string; provider: string; error?: string } | undefined;
+    if (sendEmail && password) {
+      const origins = detectHostedOrigins(req);
+      const loginUrl = resolveLoginUrl(db.settings.appBaseUrl, origins.publicOrigin);
+      const disp = await sendCredentialsEmail({
+        settings: db.settings,
+        secret,
+        to: created.email,
+        name: created.name,
+        password,
+        loginUrl,
+        productName: created.kiwifyProduct,
+      });
+      created.accessEmailSentAt = disp.log.sentAt;
+      created.accessEmailStatus = disp.status;
+      created.accessEmailError = disp.error;
+      appendEmailLog(db, disp.log);
+      saveDb(db);
+      emailResult = { status: disp.status, provider: disp.provider, error: disp.error };
+    }
+
+    res.status(201).json({
+      member: { ...publicUser(created), needsPasswordSetup: created.needsPasswordSetup },
+      generatedPassword: generatedPassword ?? (password && sendEmail ? password : undefined),
+      emailResult,
+    });
+  });
+
+  app.post('/api/admin/members/:id/send-access', requireAdmin, async (req, res) => {
+    const db = loadDb();
+    const target = db.users.find((u) => u.id === req.params.id);
+    if (!target) {
+      res.status(404).json({ error: 'Membro não encontrado.' });
+      return;
+    }
+    if (target.role === 'admin') {
+      res.status(400).json({ error: 'Use a tela Mais -> Alterar senha para atualizar a senha do Administrador.' });
+      return;
+    }
+    if (req.body?.activate === true || target.status !== 'active') {
+      target.status = 'active';
+      target.suspendedReason = '';
+    }
+    const origins = detectHostedOrigins(req);
+    const loginUrl = resolveLoginUrl(db.settings.appBaseUrl, origins.publicOrigin);
+    const result = await provisionMemberAccess({
+      user: target,
+      secret,
+      loginUrl,
+      isReset: true,
+    });
+    res.json({
+      ok: true,
+      generatedPassword: result.generatedPassword,
+      emailStatus: result.emailStatus,
+      emailProvider: result.emailProvider,
+      emailError: result.emailError,
+      member: { ...publicUser(target), needsPasswordSetup: target.needsPasswordSetup },
+    });
   });
 
   app.patch('/api/admin/members/:id', requireAdmin, (req: AuthedRequest, res) => {
@@ -632,13 +1203,24 @@ async function startServer() {
       res.status(400).json({ error: 'Não é possível desativar sua própria conta de administrador.' });
       return;
     }
-    if (typeof req.body?.status === 'string' && ['active', 'pending', 'refunded', 'canceled'].includes(req.body.status)) {
+    if (
+      typeof req.body?.status === 'string' &&
+      ['active', 'pending', 'suspended', 'refunded', 'canceled'].includes(req.body.status)
+    ) {
       target.status = req.body.status as MemberStatus;
+      target.suspendedReason =
+        target.status === 'active'
+          ? ''
+          : cleanText(req.body?.reason, 200) ||
+            (target.status === 'suspended'
+              ? 'Acesso suspenso pelo administrador (pagamento pendente).'
+              : suspensionReasonFor(target.status, ''));
     }
     if (req.body?.resetPassword === true) {
       target.passwordHash = '';
       target.passwordSalt = '';
       target.needsPasswordSetup = true;
+      target.mustChangePassword = false;
     }
     target.updatedAt = new Date().toISOString();
     saveDb(db);

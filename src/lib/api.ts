@@ -1,20 +1,19 @@
-const TOKEN_KEY = 'cfc:auth_token';
+let memoryToken: string | null = null;
+let unauthorizedHandler: ((code?: string, message?: string) => void) | null = null;
 
-export function getAuthToken(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
+// Limpa eventual token antigo salvo em storage do navegador
+try {
+  localStorage.removeItem('cfc:auth_token');
+} catch {
+  /* ignora */
 }
 
 export function setAuthToken(token: string | null): void {
-  try {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
-    else localStorage.removeItem(TOKEN_KEY);
-  } catch {
-    /* ignora */
-  }
+  memoryToken = token;
+}
+
+export function setUnauthorizedHandler(fn: ((code?: string, message?: string) => void) | null): void {
+  unauthorizedHandler = fn;
 }
 
 export class ApiError extends Error {
@@ -32,9 +31,9 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   if (init.body && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
-  const token = getAuthToken();
-  if (token && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${token}`);
+  headers.set('X-Requested-With', 'XMLHttpRequest');
+  if (memoryToken && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${memoryToken}`);
   }
 
   const res = await fetch(path, {
@@ -56,6 +55,10 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   if (!res.ok) {
     const msg = typeof data.error === 'string' ? data.error : `Erro na requisição (${res.status}).`;
     const code = typeof data.code === 'string' ? data.code : undefined;
+    if (res.status === 401 && !path.startsWith('/api/auth/login') && !path.startsWith('/api/auth/first-access')) {
+      memoryToken = null;
+      unauthorizedHandler?.(code, msg);
+    }
     throw new ApiError(msg, res.status, code);
   }
 

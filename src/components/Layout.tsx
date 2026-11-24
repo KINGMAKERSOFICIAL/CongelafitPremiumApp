@@ -1,7 +1,9 @@
 import { useEffect } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { useAuth } from '../lib/auth';
 import { summarize } from '../lib/freezer';
 import { useFreezer, useShopLines, useToday } from '../lib/hooks';
+import { getOfficialSiteHost, getOfficialSiteUrl } from '../lib/invite';
 import { Icon } from './Icon';
 import { Shield } from './Shield';
 import { Toasts } from './Toasts';
@@ -9,12 +11,15 @@ import { Toasts } from './Toasts';
 const base = import.meta.env.BASE_URL;
 
 export function Layout() {
+  const { config } = useAuth();
   const { pathname } = useLocation();
   const today = useToday();
   const { items } = useFreezer();
   const shop = useShopLines();
   const alerts = summarize(items, today);
   const freezerBadge = alerts.soon + alerts.expired;
+  const siteUrl = config.officialSiteUrl || getOfficialSiteUrl();
+  const siteHost = siteUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '') || getOfficialSiteHost();
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -75,7 +80,7 @@ export function Layout() {
       <footer className="foot">
         <img src={`${base}icons/logo-mark.png`} alt="" width={40} height={25} />
         <p>
-          <b>CongelaFit</b> · <a href="https://congelafit.store">congelafit.store</a>
+          <b>CongelaFit</b> · <a href={siteUrl}>{siteHost}</a>
         </p>
       </footer>
       <Toasts />
