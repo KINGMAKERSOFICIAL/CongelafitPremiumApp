@@ -3406,102 +3406,51 @@ h3 {
   color: var(--blue-deep);
   flex: none;
 }
-.install-sheet {
-  display: grid;
-  gap: 14px;
-}
-.install-hero {
+.install-auto-bar {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(var(--tab-h) + 12px + env(safe-area-inset-bottom));
+  z-index: 40;
+  max-width: 460px;
+  margin: 0 auto;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 10px 12px;
-  border-radius: 14px;
-  background: var(--ice);
-  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(13, 165, 232, 0.35);
+  box-shadow: 0 12px 30px rgba(17, 29, 36, 0.16);
+  backdrop-filter: blur(12px);
 }
-.install-hero img {
-  border-radius: 12px;
+.install-auto-bar img {
+  border-radius: 10px;
   flex: none;
 }
-.install-hero b {
-  display: block;
-  font-size: 15px;
-}
-.install-hero p {
-  margin: 2px 0 0;
-}
-.install-tabs {
+.install-auto-txt {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  padding: 4px;
-  background: var(--ice);
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
 }
-.install-tab {
-  min-height: 38px;
-  border: 0;
-  border-radius: 9px;
-  background: transparent;
-  color: var(--muted);
-  font-weight: 700;
+.install-auto-txt b {
   font-size: 13.5px;
-  cursor: pointer;
-}
-.install-tab.on {
-  background: #fff;
   color: var(--ink);
-  box-shadow: 0 1px 3px rgba(17, 29, 36, 0.1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.install-steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 10px;
-}
-.install-steps li {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: #fff;
-}
-.install-step-num {
-  width: 24px;
-  height: 24px;
-  border-radius: 999px;
-  background: var(--blue);
-  color: #fff;
-  font-weight: 700;
-  font-size: 13px;
-  display: grid;
-  place-items: center;
-  flex: none;
-  margin-top: 1px;
-}
-.install-steps b {
-  display: block;
-  font-size: 14px;
-  margin-bottom: 2px;
-}
-.install-steps p {
-  margin: 0;
-  font-size: 13px;
+.install-auto-txt span {
+  font-size: 12px;
   color: var(--muted);
-  line-height: 1.45;
 }
-.inline-ico {
-  display: inline-block;
-  vertical-align: -3px;
-  color: var(--blue-deep);
-}
-.install-note {
-  margin: 0;
-  color: var(--muted);
+@media (min-width: 860px) {
+  .install-auto-bar {
+    bottom: 18px;
+    left: auto;
+    right: 18px;
+  }
 }
 
 /* ───────── proteção do conteúdo (membros, sem marca d'água) ───────── */

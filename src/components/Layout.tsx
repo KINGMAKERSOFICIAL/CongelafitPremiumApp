@@ -5,7 +5,7 @@ import { summarize } from '../lib/freezer';
 import { useFreezer, useShopLines, useToday } from '../lib/hooks';
 import { getOfficialSiteHost, getOfficialSiteUrl } from '../lib/invite';
 import { Icon } from './Icon';
-import { InstallAppButton } from './InstallAppButton';
+import { InstallAppButton, InstallAutoPrompt } from './InstallAppButton';
 import { Shield } from './Shield';
 import { Toasts } from './Toasts';
 
@@ -88,6 +88,7 @@ export function Layout() {
         </p>
       </footer>
       <Toasts />
+      <InstallAutoPrompt />
       <Shield />
       <nav className="tabbar" aria-label="Principal">
         {links.map((l) => (

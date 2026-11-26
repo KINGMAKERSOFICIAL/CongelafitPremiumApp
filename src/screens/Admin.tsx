@@ -437,7 +437,7 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
   const [emailFromAddress, setEmailFromAddress] = useState('');
   const [sendSuspensionEmail, setSendSuspensionEmail] = useState(true);
 
-  const [saving, setSaving] = useState(false);
+  const [savingSection, setSavingSection] = useState<'webhook' | 'api' | 'email' | null>(null);
   const [probing, setProbing] = useState(false);
   const [testingApi, setTestingApi] = useState(false);
   const [syncingSales, setSyncingSales] = useState(false);
@@ -453,7 +453,9 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
   const [resettingTpl, setResettingTpl] = useState(false);
   const editorSectionRef = useRef<HTMLElement>(null);
   const htmlTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const [err, setErr] = useState('');
+  const [webhookErr, setWebhookErr] = useState('');
+  const [apiErr, setApiErr] = useState('');
+  const [emailErr, setEmailErr] = useState('');
 
   // Simular webhook
   const [testEmail, setTestEmail] = useState('');
@@ -556,23 +558,101 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
   const webhookUrl = `${effectiveBaseUrl}/api/webhooks/kiwify/${token}`;
   const webhookBaseUrl = `${effectiveBaseUrl}/api/webhooks/kiwify`;
 
-  const saveSettings = async (e: FormEvent) => {
+  const refreshSettingsMeta = async () => {
+    const kiwify = await apiFetch<{
+      settings: KiwifySettings;
+      webhookLogs: WebhookLog[];
+      emailLogs: EmailLogItem[];
+      hosting?: KiwifyHosting;
+    }>('/api/admin/kiwify');
+    setSettings(kiwify.settings);
+    setHosting(kiwify.hosting ?? null);
+    setLogs(kiwify.webhookLogs);
+    setEmailLogs(kiwify.emailLogs ?? []);
+  };
+
+  const buildBasePayload = (cur: KiwifySettings) => ({
+    officialSiteUrl: (cur.officialSiteUrl || 'https://www.congelafit.com.br').trim().replace(/\/+$/, ''),
+    appBaseUrl: (cur.appBaseUrl || '').trim().replace(/\/+$/, ''),
+    kiwifyWebhookToken: cur.kiwifyWebhookToken.trim(),
+    kiwifyCheckoutUrl: cur.kiwifyCheckoutUrl.trim(),
+    kiwifyAffiliateInviteUrl: cur.kiwifyAffiliateInviteUrl.trim(),
+    kiwifyClientId: (cur.kiwifyClientId ?? '').trim(),
+    kiwifyAccountId: (cur.kiwifyAccountId ?? '').trim(),
+    kiwifyProductId: (cur.kiwifyProductId ?? '').trim(),
+    emailProvider: cur.emailProvider ?? 'auto',
+    smtpHost: (cur.smtpHost ?? '').trim(),
+    smtpPort: Number(cur.smtpPort) || 587,
+    smtpSecure: Boolean(cur.smtpSecure),
+    smtpUser: (cur.smtpUser ?? '').trim(),
+    emailFromName: (cur.emailFromName ?? 'CongelaFit Premium').trim() || 'CongelaFit Premium',
+    emailFromAddress: (cur.emailFromAddress ?? '').trim(),
+    sendSuspensionEmail: cur.sendSuspensionEmail !== false,
+  });
+
+  const saveWebhookSettings = async (e: FormEvent) => {
     e.preventDefault();
-    setErr('');
-    setSaving(true);
+    if (!settings) return;
+    setWebhookErr('');
+    setSavingSection('webhook');
     try {
       await apiFetch('/api/admin/kiwify', {
         method: 'PUT',
         body: JSON.stringify({
+          ...buildBasePayload(settings),
           officialSiteUrl: officialSiteUrl.trim().replace(/\/+$/, ''),
           appBaseUrl: appBaseUrl.trim().replace(/\/+$/, ''),
           kiwifyWebhookToken: token.trim(),
           kiwifyCheckoutUrl: checkoutUrl.trim(),
           kiwifyAffiliateInviteUrl: affiliateInviteUrl.trim(),
+        }),
+      });
+      await refreshSettingsMeta();
+      await onConfigChanged();
+      toast('Configurações do Webhook Kiwify salvas!');
+    } catch (e2) {
+      setWebhookErr(e2 instanceof Error ? e2.message : 'Erro ao salvar Webhook Kiwify.');
+    } finally {
+      setSavingSection(null);
+    }
+  };
+
+  const saveApiSettings = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!settings) return;
+    setApiErr('');
+    setSavingSection('api');
+    try {
+      await apiFetch('/api/admin/kiwify', {
+        method: 'PUT',
+        body: JSON.stringify({
+          ...buildBasePayload(settings),
           kiwifyClientId: kiwifyClientId.trim(),
           kiwifyClientSecret: kiwifyClientSecret.trim() || undefined,
           kiwifyAccountId: kiwifyAccountId.trim(),
           kiwifyProductId: kiwifyProductId.trim(),
+        }),
+      });
+      setKiwifyClientSecret('');
+      await refreshSettingsMeta();
+      toast('Credenciais da API Direta da Kiwify salvas!');
+    } catch (e2) {
+      setApiErr(e2 instanceof Error ? e2.message : 'Erro ao salvar API da Kiwify.');
+    } finally {
+      setSavingSection(null);
+    }
+  };
+
+  const saveEmailSettings = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!settings) return;
+    setEmailErr('');
+    setSavingSection('email');
+    try {
+      await apiFetch('/api/admin/kiwify', {
+        method: 'PUT',
+        body: JSON.stringify({
+          ...buildBasePayload(settings),
           emailProvider,
           smtpHost: smtpHost.trim(),
           smtpPort: Number(smtpPort) || 587,
@@ -585,16 +665,14 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
           sendSuspensionEmail,
         }),
       });
-      setKiwifyClientSecret('');
       setSmtpPass('');
       setResendApiKey('');
-      await loadAll();
-      await onConfigChanged();
-      toast('Configurações salvas com sucesso.');
+      await refreshSettingsMeta();
+      toast('Configurações de envio de e-mail salvas!');
     } catch (e2) {
-      setErr(e2 instanceof Error ? e2.message : 'Erro ao salvar configurações.');
+      setEmailErr(e2 instanceof Error ? e2.message : 'Erro ao salvar configurações de e-mail.');
     } finally {
-      setSaving(false);
+      setSavingSection(null);
     }
   };
 
@@ -916,9 +994,9 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
         </div>
       )}
 
-      <form className="stack" onSubmit={saveSettings}>
+      <div className="stack">
         {/* BLOCO 1: WEBHOOK KIWIFY */}
-        <section className="card pad-card stack">
+        <form className="card pad-card stack" onSubmit={saveWebhookSettings}>
           <div className="dash-head">
             <h2>1. Comunicação em Tempo Real — Webhook Kiwify</h2>
             <div className="table-actions">
@@ -1072,10 +1150,21 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
               </p>
             </div>
           </div>
-        </section>
+          {webhookErr && (
+            <p className="form-err" role="alert">
+              {webhookErr}
+            </p>
+          )}
+
+          <div className="form-actions">
+            <button type="submit" className="btn" disabled={savingSection === 'webhook'}>
+              <Icon name="check" size={17} /> {savingSection === 'webhook' ? 'Salvando…' : 'Salvar Webhook Kiwify'}
+            </button>
+          </div>
+        </form>
 
         {/* BLOCO 2: API DIRETA DA KIWIFY (OAUTH 2.0) */}
-        <section className="card pad-card stack">
+        <form className="card pad-card stack" onSubmit={saveApiSettings}>
           <div className="dash-head">
             <h2>2. API Direta da Kiwify (Sincronização de Vendas OAuth)</h2>
             <span className={`pill ${settings.kiwifyApiConfigured ? 'ok' : 'soon'}`}>
@@ -1148,10 +1237,22 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
             Onde pegar na Kiwify: <b>Apps → API → Criar API Key</b>. Copie <b>Client ID</b>, <b>Client Secret</b> e{' '}
             <b>Account ID</b>.
           </p>
-        </section>
+
+          {apiErr && (
+            <p className="form-err" role="alert">
+              {apiErr}
+            </p>
+          )}
+
+          <div className="form-actions">
+            <button type="submit" className="btn" disabled={savingSection === 'api'}>
+              <Icon name="check" size={17} /> {savingSection === 'api' ? 'Salvando…' : 'Salvar API Kiwify'}
+            </button>
+          </div>
+        </form>
 
         {/* BLOCO 3: ENVIO AUTOMÁTICO DE E-MAIL AOS ALUNOS */}
-        <section className="card pad-card stack">
+        <form className="card pad-card stack" onSubmit={saveEmailSettings}>
           <div className="dash-head">
             <h2>3. Envio Automático de E-mail (Login e Senha ao Aluno)</h2>
             <span className={`pill ${settings.activeEmailProvider === 'outbox' ? 'soon' : 'ok'}`}>
@@ -1294,19 +1395,20 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
             </button>
           </div>
 
-          {err && (
+          {emailErr && (
             <p className="form-err" role="alert">
-              {err}
+              {emailErr}
             </p>
           )}
 
           <div className="form-actions">
-            <button type="submit" className="btn" disabled={saving}>
-              <Icon name="check" size={17} /> {saving ? 'Salvando…' : 'Salvar todas as configurações'}
+            <button type="submit" className="btn" disabled={savingSection === 'email'}>
+              <Icon name="check" size={17} />{' '}
+              {savingSection === 'email' ? 'Salvando…' : 'Salvar configurações de e-mail'}
             </button>
           </div>
-        </section>
-      </form>
+        </form>
+      </div>
 
       {/* BLOCO 3B: EDITOR E PRÉVIA DO HTML DOS E-MAILS */}
       <section ref={editorSectionRef} className="card pad-card stack">
