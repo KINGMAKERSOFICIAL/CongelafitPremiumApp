@@ -5,6 +5,7 @@ import { summarize } from '../lib/freezer';
 import { useFreezer, useShopLines, useToday } from '../lib/hooks';
 import { getOfficialSiteHost, getOfficialSiteUrl } from '../lib/invite';
 import { Icon } from './Icon';
+import { InstallAppButton } from './InstallAppButton';
 import { Shield } from './Shield';
 import { Toasts } from './Toasts';
 
@@ -70,9 +71,12 @@ export function Layout() {
             </NavLink>
           ))}
         </nav>
-        <Link to="/mais" className="icon-btn menu-btn" aria-label="Mais opções">
-          <Icon name="menu" size={20} />
-        </Link>
+        <div className="topbar-actions">
+          <InstallAppButton variant="topbar" />
+          <Link to="/mais" className="icon-btn menu-btn" aria-label="Mais opções">
+            <Icon name="menu" size={20} />
+          </Link>
+        </div>
       </header>
       <main className="main" id="conteudo" tabIndex={-1}>
         <Outlet />

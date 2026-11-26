@@ -1,4 +1,4 @@
-import { salesLink, SALES_HOST, SALES_URL } from './invite';
+import { PURCHASE_HOST, PURCHASE_URL } from './invite';
 import { formatAmounts, type Section, type ShopLine } from './shopping';
 
 type Group = { section: Section; lines: ShopLine[] };
@@ -195,7 +195,7 @@ export async function buildShoppingPdf(
   }
 
   // QR code em todas as páginas.
-  const url = salesLink('pdf', 'lista-de-compras');
+  const url = PURCHASE_URL;
   const qr = qrcode(0, 'M');
   qr.addData(url);
   qr.make();
@@ -239,8 +239,8 @@ export async function buildShoppingPdf(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9.5);
     doc.setTextColor(...BLUE);
-    const cta = `Aponte a câmera para o QR code ou acesse ${SALES_HOST}`;
-    doc.textWithLink(pdfText(cta), tx, qy + 12 + pitch.length * 4.2 + 3, { url: SALES_URL });
+    const cta = `Aponte a câmera para o QR code ou acesse ${PURCHASE_HOST}`;
+    doc.textWithLink(pdfText(cta), tx, qy + 12 + pitch.length * 4.2 + 3, { url: PURCHASE_URL });
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(...GRAY);

@@ -1,15 +1,17 @@
 import { useState, type FormEvent } from 'react';
 import { Icon } from '../components/Icon';
+import { InstallAppButton } from '../components/InstallAppButton';
 import { PasswordInput } from '../components/PasswordInput';
 import { ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { PURCHASE_URL } from '../lib/invite';
 
 const base = import.meta.env.BASE_URL;
 
 type AuthMode = 'login' | 'forgot' | 'first';
 
 export function Login() {
-  const { login, firstAccess, forgotPassword, authNotice, clearAuthNotice, config } = useAuth();
+  const { login, firstAccess, forgotPassword, authNotice, clearAuthNotice } = useAuth();
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
@@ -98,6 +100,8 @@ export function Login() {
             <p className="small">Área de Membros · Acesso integrado à Kiwify</p>
           </div>
         </div>
+
+        <InstallAppButton variant="login" />
 
         <div className="auth-tabs" role="tablist" aria-label="Tipo de acesso">
           <button
@@ -233,16 +237,14 @@ export function Login() {
                 ? 'Enviaremos uma nova senha temporária para o e-mail cadastrado caso sua assinatura/compra esteja ativa.'
                 : 'Se seu pagamento na Kiwify já foi aprovado e você preferir definir sua senha agora, preencha os campos acima.'}
           </p>
-          {config.kiwifyCheckoutUrl && (
-            <a
-              href={config.kiwifyCheckoutUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn ghost sm"
-            >
-              <Icon name="external" size={16} /> Ainda não tenho acesso · Comprar na Kiwify
-            </a>
-          )}
+          <a
+            href={PURCHASE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn ghost sm"
+          >
+            <Icon name="external" size={16} /> Ainda não tenho acesso · Comprar agora
+          </a>
         </div>
       </div>
     </div>

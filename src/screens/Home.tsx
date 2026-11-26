@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Icon } from '../components/Icon';
+import { InstallAppButton } from '../components/InstallAppButton';
 import { RecipeCard } from '../components/RecipeCard';
 import { RECIPES, getRecipe } from '../data';
 import { WEEKDAYS, fmtDM, weekdayIndex } from '../lib/dates';
@@ -54,10 +55,13 @@ export function Home() {
         <p className="eyebrow">{WEEKDAYS[weekdayIndex(today)]}</p>
         <div className="dash-date-row">
           <h1>Hoje, {fmtDM(today)}</h1>
-          <Link to="/receitas" className="dash-recipe-count">
-            <Icon name="book" size={16} />
-            <b>{RECIPES.length}</b> receitas
-          </Link>
+          <div className="dash-head-actions">
+            <InstallAppButton variant="home" />
+            <Link to="/receitas" className="dash-recipe-count">
+              <Icon name="book" size={16} />
+              <b>{RECIPES.length}</b> receitas
+            </Link>
+          </div>
         </div>
         <p>Seu freezer, o cardápio do dia e a lista de compras em um só lugar.</p>
       </header>

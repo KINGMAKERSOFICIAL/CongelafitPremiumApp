@@ -80,8 +80,8 @@ export function About() {
       </p>
       <h2>Acesso pessoal e conteúdo protegido</h2>
       <p>
-        As receitas são de uso exclusivo de quem comprou o acesso. Por isso o app mostra seu e-mail de forma
-        discreta sobre as telas, desativa cópia e impressão e cobre a tela quando você troca de aplicativo. A
+        As receitas são de uso exclusivo de quem comprou o acesso. Por isso o app bloqueia cópia, salvamento
+        e impressão das receitas e oculta a tela quando você troca de aplicativo ou tenta fazer captura. A
         única coisa que dá para compartilhar é a <b>Lista de compras</b> (texto e PDF), pelo botão de
         compartilhar. A etiqueta do freezer continua imprimindo normalmente.
       </p>

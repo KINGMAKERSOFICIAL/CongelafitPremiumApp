@@ -1338,6 +1338,44 @@ h3 {
 .main:focus {
   outline: none;
 }
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.install-icon-btn {
+  width: auto;
+  min-width: 42px;
+  padding: 0 10px;
+  gap: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--blue-deep);
+  background: var(--ice);
+  border-color: rgba(13, 165, 232, 0.35);
+}
+.install-topbar-lbl {
+  display: none;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+@media (min-width: 640px) {
+  .install-icon-btn {
+    padding: 0 13px;
+    border-radius: 999px;
+  }
+  .install-topbar-lbl {
+    display: inline;
+  }
+}
+.install-icon-btn:hover {
+  background: var(--blue);
+  color: #fff;
+  border-color: var(--blue);
+}
 .menu-btn {
   display: inline-grid;
   flex: none;
@@ -1992,6 +2030,32 @@ h3 {
   align-items: center;
   justify-content: space-between;
   gap: 8px 14px;
+}
+.dash-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.dash-install-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--ice);
+  color: var(--blue-deep);
+  border: 1px solid rgba(13, 165, 232, 0.32);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.dash-install-btn:hover {
+  background: var(--blue);
+  color: #fff;
+  border-color: var(--blue);
 }
 .dash-recipe-count {
   display: inline-flex;
@@ -3295,7 +3359,152 @@ h3 {
   }
 }
 
-/* ───────── proteção do conteúdo (membros) ───────── */
+/* ───────── instalar aplicativo (iOS e Android) ───────── */
+.install-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(13, 165, 232, 0.35);
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--ice) 0%, #fff 100%);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.install-banner:hover {
+  border-color: var(--blue);
+  background: var(--ice);
+}
+.install-banner-ico {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--blue);
+  color: #fff;
+  flex: none;
+}
+.install-banner-txt {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.install-banner-txt b {
+  font-size: 14px;
+  color: var(--ink);
+}
+.install-banner-txt small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.install-banner > svg {
+  color: var(--blue-deep);
+  flex: none;
+}
+.install-sheet {
+  display: grid;
+  gap: 14px;
+}
+.install-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--ice);
+  border: 1px solid var(--line);
+}
+.install-hero img {
+  border-radius: 12px;
+  flex: none;
+}
+.install-hero b {
+  display: block;
+  font-size: 15px;
+}
+.install-hero p {
+  margin: 2px 0 0;
+}
+.install-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 4px;
+  background: var(--ice);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.install-tab {
+  min-height: 38px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.install-tab.on {
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(17, 29, 36, 0.1);
+}
+.install-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.install-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+.install-step-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--blue);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  margin-top: 1px;
+}
+.install-steps b {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+.install-steps p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.inline-ico {
+  display: inline-block;
+  vertical-align: -3px;
+  color: var(--blue-deep);
+}
+.install-note {
+  margin: 0;
+  color: var(--muted);
+}
+
+/* ───────── proteção do conteúdo (membros, sem marca d'água) ───────── */
 body.cf-protect {
   -webkit-user-select: none;
   user-select: none;
@@ -3310,16 +3519,10 @@ body.cf-protect [contenteditable] {
   -webkit-touch-callout: default;
 }
 body.cf-protect img {
+  pointer-events: none;
   -webkit-user-drag: none;
   user-drag: none;
-}
-.wm {
-  position: fixed;
-  inset: 0;
-  z-index: 9000;
-  pointer-events: none;
-  background-repeat: repeat;
-  background-size: 340px 210px;
+  -webkit-touch-callout: none;
 }
 .veil {
   position: fixed;
@@ -3330,9 +3533,9 @@ body.cf-protect img {
   justify-content: center;
   text-align: center;
   color: #fff;
-  background: rgba(17, 29, 36, 0.93);
-  -webkit-backdrop-filter: blur(22px);
-  backdrop-filter: blur(22px);
+  background: rgba(17, 29, 36, 0.96);
+  -webkit-backdrop-filter: blur(26px);
+  backdrop-filter: blur(26px);
 }
 .veil div {
   display: grid;
@@ -3344,7 +3547,12 @@ body.cf-protect img {
 }
 .veil span {
   font-size: 0.9rem;
-  opacity: 0.8;
+  opacity: 0.85;
+}
+body.cf-veil .app {
+  filter: blur(28px) !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 body.cf-veil .veil {
   display: flex;
@@ -3352,18 +3560,19 @@ body.cf-veil .veil {
 
 @media print {
   /* Páginas de receita, lista e planner não saem no papel; só a etiqueta do freezer imprime. */
-  body.cf-protect:not([data-printable]) .app {
+  body.cf-protect:not([data-printable]) .app,
+  body.cf-protect [data-recipe-protected] {
     display: none !important;
+    visibility: hidden !important;
   }
   body.cf-protect:not([data-printable])::before {
-    content: 'Impressão desativada. Conteúdo exclusivo dos membros do CongelaFit Premium · www.congelafit.com.br';
+    content: 'Impressão e print de receitas desativados. Conteúdo exclusivo dos membros do CongelaFit Premium · www.congelafit.com.br';
     display: block;
     padding: 30mm 15mm;
     text-align: center;
     font: 700 16pt/1.4 Arial, Helvetica, sans-serif;
     color: #111d24;
   }
-  .wm,
   .veil {
     display: none !important;
   }

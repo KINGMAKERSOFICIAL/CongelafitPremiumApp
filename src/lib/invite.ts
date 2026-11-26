@@ -30,6 +30,9 @@ export function getOfficialSiteHost(): string {
   return currentSiteUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '');
 }
 
+export const PURCHASE_URL = 'https://congelafit.store/';
+export const PURCHASE_HOST = 'congelafit.store';
+
 /** Link da página de vendas com UTMs (a Utmify da página de vendas lê esses parâmetros). */
 export function salesLink(medium: string, campaign = 'app'): string {
   const q = new URLSearchParams({ utm_source: 'app', utm_medium: medium, utm_campaign: campaign });
@@ -47,7 +50,7 @@ export function shoppingInviteFooter(): string[] {
     '———',
     '🛒 Lista montada no *CongelaFit Premium*: você escolhe as receitas da semana e o app soma os ingredientes e separa por seção do mercado.',
     `❄️ São ${recipesCountLabel()} receitas para congelar, com planner da semana e controle de validade do freezer.`,
-    `👉 Conheça o app: ${salesLink('lista', 'compartilhar')}`,
+    `👉 Conheça o app: ${PURCHASE_URL}`,
   ];
 }
 

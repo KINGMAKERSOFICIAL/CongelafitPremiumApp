@@ -1,15 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
-import { installProtection, watermarkImage } from '../lib/protect';
+import { installProtection } from '../lib/protect';
 
 /** Rotas feitas para imprimir (a etiqueta do pote). */
 const PRINTABLE = /^\/freezer\/etiqueta\//;
 
 /**
- * Proteção do conteúdo para membros: marca d'água com o e-mail, bloqueio de cópia/seleção/impressão e
- * cobertura da tela quando o app sai de cena. O administrador fica de fora (precisa copiar e editar).
+ * Proteção do conteúdo para membros (sem marca d'água):
+ * - Bloqueia cópia, seleção, menu de contexto, salvamento e impressão (exceto etiquetas do freezer).
+ * - Oculta imediatamente o conteúdo quando a janela perde foco, o app vai para segundo plano ou há
+ *   tentativa de captura/print. O administrador fica de fora para editar e gerenciar o app.
  */
 export function Shield() {
   const { user } = useAuth();
@@ -19,9 +21,7 @@ export function Shield() {
   const printableRef = useRef(printable);
   printableRef.current = printable;
   const [veil, setVeil] = useState(false);
-  const wmRef = useRef<HTMLDivElement | null>(null);
-
-  const image = useMemo(() => (user ? watermarkImage(user.email) : ''), [user]);
+  const veilRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!active) return;
@@ -40,48 +40,43 @@ export function Shield() {
 
   useEffect(() => {
     document.body.classList.toggle('cf-veil', veil);
+    return () => document.body.classList.remove('cf-veil');
   }, [veil]);
 
-  // Se alguém apagar ou esconder a marca d'água pelo inspetor do navegador, ela volta.
+  // Protege contra remoção/alteração manual das classes ou do véu via inspetor do navegador.
   useEffect(() => {
     if (!active) return;
-    const mo = new MutationObserver(() => {
-      const el = wmRef.current;
+    const ensure = () => {
+      if (!document.body.classList.contains('cf-protect')) {
+        document.body.classList.add('cf-protect');
+      }
+      const el = veilRef.current;
       if (!el) return;
       if (!el.isConnected) {
-        // Recoloca o mesmo elemento (o React continua dono dele) em vez de remontar.
         document.body.appendChild(el);
         return;
       }
-      const cs = getComputedStyle(el);
-      if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) < 0.5 || el.className !== 'wm') {
-        el.className = 'wm';
-        el.removeAttribute('hidden');
-        el.style.cssText = '';
-        el.style.backgroundImage = `url("${image}")`;
+      if (el.className !== 'veil') {
+        el.className = 'veil';
       }
-    });
-    mo.observe(document.body, { childList: true });
-    if (wmRef.current) mo.observe(wmRef.current, { attributes: true });
+      if (el.hasAttribute('hidden')) {
+        el.removeAttribute('hidden');
+      }
+    };
+    const mo = new MutationObserver(ensure);
+    mo.observe(document.body, { childList: true, attributes: true, attributeFilter: ['class', 'data-printable'] });
+    if (veilRef.current) mo.observe(veilRef.current, { attributes: true });
     return () => mo.disconnect();
-  }, [active, image]);
+  }, [active]);
 
   if (!active) return null;
   return createPortal(
-    <>
-      <div
-        ref={wmRef}
-        className="wm"
-        aria-hidden="true"
-        style={{ backgroundImage: `url("${image}")` }}
-      />
-      <div className="veil" aria-hidden={!veil} role="presentation">
-        <div>
-          <b>Conteúdo protegido</b>
-          <span>Toque para continuar</span>
-        </div>
+    <div ref={veilRef} className="veil" aria-hidden={!veil} role="presentation">
+      <div>
+        <b>Conteúdo protegido</b>
+        <span>Impressão e print desativados · toque para continuar</span>
       </div>
-    </>,
+    </div>,
     document.body,
   );
 }

@@ -1,30 +1,40 @@
 import { describe, expect, it } from 'vitest';
 import { RECIPES } from '../data';
-import { copyNotice, recipesCountLabel, salesLink, shoppingInviteFooter } from './invite';
-import { watermarkImage } from './protect';
+import {
+  PURCHASE_HOST,
+  PURCHASE_URL,
+  copyNotice,
+  recipesCountLabel,
+  salesLink,
+  shoppingInviteFooter,
+} from './invite';
+import { classifyBlockedShortcut } from './protect';
 import { aggregate, groupBySection, shareText } from './shopping';
 import { buildShoppingPdf, pdfText } from './shoppingPdf';
 
 describe('convite e links', () => {
-  it('o link da página de vendas leva UTMs', () => {
-    const u = new URL(salesLink('lista', 'compartilhar'));
+  it('o link oficial de vendas leva UTMs', () => {
+    const u = new URL(salesLink('copia', 'protecao'));
     expect(u.origin).toBe('https://www.congelafit.com.br');
     expect(u.searchParams.get('utm_source')).toBe('app');
-    expect(u.searchParams.get('utm_medium')).toBe('lista');
-    expect(u.searchParams.get('utm_campaign')).toBe('compartilhar');
+    expect(u.searchParams.get('utm_medium')).toBe('copia');
+    expect(u.searchParams.get('utm_campaign')).toBe('protecao');
   });
   it('"mais de 500" vem do total real de receitas', () => {
     expect(RECIPES.length).toBeGreaterThanOrEqual(506);
     expect(recipesCountLabel(506)).toBe('mais de 500');
     expect(recipesCountLabel(1010)).toBe('mais de 1000');
   });
-  it('o rodapé do WhatsApp convida, tem o link e não promete resultado', () => {
+  it('o rodapé do WhatsApp da lista de compras usa https://congelafit.store/ e não promete resultado', () => {
     const t = shoppingInviteFooter().join('\n');
-    expect(t).toContain('https://www.congelafit.com.br/?utm_source=app');
+    expect(PURCHASE_URL).toBe('https://congelafit.store/');
+    expect(PURCHASE_HOST).toBe('congelafit.store');
+    expect(t).toContain('https://congelafit.store/');
+    expect(t).not.toContain('www.congelafit.com.br');
     expect(t).toContain('CongelaFit Premium');
     expect(t).not.toMatch(/emagre|cura|garant|milagre|sem risco|últimas vagas|só hoje/i);
   });
-  it('o aviso de cópia bloqueada leva o link e nenhum conteúdo de receita', () => {
+  it('o aviso de cópia bloqueada mantém o domínio oficial e nenhum conteúdo de receita', () => {
     const n = copyNotice();
     expect(n).toContain('https://www.congelafit.com.br');
     expect(n.length).toBeLessThan(200);
@@ -36,14 +46,71 @@ describe('convite e links', () => {
   });
 });
 
-describe('marca d’água', () => {
-  it('escapa o e-mail dentro do SVG', () => {
-    const uri = decodeURIComponent(watermarkImage('a&b<c>"@x.com'));
-    expect(uri).toContain('a&amp;b&lt;c&gt;&quot;@x.com');
-    expect(uri).not.toContain('<c>');
+describe('proteção anti-print e anti-captura (sem marca d’água)', () => {
+  it('identifica PrintScreen (incluindo keyCode 44) e atalhos de captura de tela no computador e tablet', () => {
+    expect(
+      classifyBlockedShortcut(
+        { key: 'PrintScreen', code: 'PrintScreen', keyCode: 44, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false },
+        false,
+      ),
+    ).toBe('screenshot');
+    expect(
+      classifyBlockedShortcut(
+        { key: '', code: '', keyCode: 44, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false },
+        false,
+      ),
+    ).toBe('screenshot');
+    expect(
+      classifyBlockedShortcut(
+        { key: '4', code: 'Digit4', keyCode: 52, ctrlKey: false, metaKey: true, shiftKey: true, altKey: false },
+        false,
+      ),
+    ).toBe('screenshot');
+    expect(
+      classifyBlockedShortcut(
+        { key: 'S', code: 'KeyS', keyCode: 83, ctrlKey: true, metaKey: false, shiftKey: true, altKey: false },
+        false,
+      ),
+    ).toBe('screenshot');
   });
-  it('é um SVG que se repete (data URI)', () => {
-    expect(watermarkImage('maria@exemplo.com')).toMatch(/^data:image\/svg\+xml;utf8,/);
+
+  it('bloqueia impressão fora da etiqueta do freezer e libera na rota imprimível', () => {
+    const ctrlP = { key: 'p', code: 'KeyP', keyCode: 80, ctrlKey: true, metaKey: false, shiftKey: false, altKey: false };
+    expect(classifyBlockedShortcut(ctrlP, false)).toBe('print');
+    expect(classifyBlockedShortcut(ctrlP, true)).toBeNull();
+  });
+
+  it('bloqueia selecionar tudo, copiar, salvar página e DevTools', () => {
+    expect(
+      classifyBlockedShortcut(
+        { key: 'a', code: 'KeyA', keyCode: 65, ctrlKey: true, metaKey: false, shiftKey: false, altKey: false },
+        false,
+      ),
+    ).toBe('copy');
+    expect(
+      classifyBlockedShortcut(
+        { key: 'c', code: 'KeyC', keyCode: 67, ctrlKey: false, metaKey: true, shiftKey: false, altKey: false },
+        false,
+      ),
+    ).toBe('copy');
+    expect(
+      classifyBlockedShortcut(
+        { key: 's', code: 'KeyS', keyCode: 83, ctrlKey: true, metaKey: false, shiftKey: false, altKey: false },
+        false,
+      ),
+    ).toBe('save');
+    expect(
+      classifyBlockedShortcut(
+        { key: 'F12', code: 'F12', keyCode: 123, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false },
+        false,
+      ),
+    ).toBe('devtools');
+    expect(
+      classifyBlockedShortcut(
+        { key: 'I', code: 'KeyI', keyCode: 73, ctrlKey: true, metaKey: false, shiftKey: true, altKey: false },
+        false,
+      ),
+    ).toBe('devtools');
   });
 });
 

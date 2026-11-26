@@ -130,7 +130,7 @@ export function Recipe() {
   let counter = 0;
 
   return (
-    <article className="page recipe">
+    <article className="page recipe" data-recipe-protected="true">
       <div className="recipe-bar">
         <button
           type="button"
