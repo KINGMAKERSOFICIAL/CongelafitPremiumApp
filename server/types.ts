@@ -58,12 +58,20 @@ export interface WebhookLog {
   detail: string;
 }
 
+export type EmailTemplateType = 'welcome' | 'reactivated' | 'reset' | 'suspended' | 'test';
+
+export interface EmailTemplateOverride {
+  subject: string;
+  html: string;
+  updatedAt: string;
+}
+
 export interface EmailLog {
   id: string;
   sentAt: string;
   to: string;
   name: string;
-  type: 'welcome' | 'reactivated' | 'reset' | 'suspended' | 'test';
+  type: EmailTemplateType;
   subject: string;
   provider: 'smtp' | 'resend' | 'outbox';
   status: 'sent' | 'failed' | 'outbox';
@@ -102,6 +110,7 @@ export interface AppSettings {
   emailFromName?: string;
   emailFromAddress?: string;
   sendSuspensionEmail?: boolean;
+  emailTemplates?: Partial<Record<EmailTemplateType, EmailTemplateOverride>>;
   updatedAt: string;
 }
 

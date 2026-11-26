@@ -94,6 +94,23 @@ interface EmailLogItem {
   error?: string;
 }
 
+type EmailTemplateType = 'welcome' | 'reset' | 'reactivated' | 'suspended' | 'test';
+
+interface EmailTemplateItem {
+  type: EmailTemplateType;
+  label: string;
+  description: string;
+  variables: Array<{ key: string; label: string }>;
+  isCustom: boolean;
+  updatedAt: string | null;
+  subject: string;
+  html: string;
+  defaultSubject: string;
+  defaultHtml: string;
+  previewSubject: string;
+  previewHtml: string;
+}
+
 interface AdminMember {
   id: string;
   email: string;
@@ -426,10 +443,16 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
   const [syncingSales, setSyncingSales] = useState(false);
   const [testingEmail, setTestingEmail] = useState(false);
   const [testEmailDest, setTestEmailDest] = useState('');
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewType, setPreviewType] = useState<'welcome' | 'reset' | 'reactivated' | 'suspended' | 'test'>('welcome');
-  const [previewData, setPreviewData] = useState<{ subject: string; html: string } | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
+  const [emailTemplates, setEmailTemplates] = useState<EmailTemplateItem[]>([]);
+  const [selectedTplType, setSelectedTplType] = useState<EmailTemplateType>('welcome');
+  const [draftSubject, setDraftSubject] = useState('');
+  const [draftHtml, setDraftHtml] = useState('');
+  const [livePreview, setLivePreview] = useState<{ subject: string; html: string } | null>(null);
+  const [previewViewport, setPreviewViewport] = useState<'desktop' | 'mobile'>('desktop');
+  const [savingTpl, setSavingTpl] = useState(false);
+  const [resettingTpl, setResettingTpl] = useState(false);
+  const editorSectionRef = useRef<HTMLElement>(null);
+  const htmlTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [err, setErr] = useState('');
 
   // Simular webhook
@@ -454,7 +477,7 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
   } | null>(null);
 
   const loadAll = useCallback(async () => {
-    const [kiwify, mem] = await Promise.all([
+    const [kiwify, mem, tplRes] = await Promise.all([
       apiFetch<{
         settings: KiwifySettings;
         webhookLogs: WebhookLog[];
@@ -462,6 +485,7 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
         hosting?: KiwifyHosting;
       }>('/api/admin/kiwify'),
       apiFetch<{ members: AdminMember[] }>('/api/admin/members'),
+      apiFetch<{ templates: EmailTemplateItem[] }>('/api/admin/email/templates'),
     ]);
     setSettings(kiwify.settings);
     setHosting(kiwify.hosting ?? null);
@@ -484,11 +508,48 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
     setEmailFromAddress(kiwify.settings.emailFromAddress ?? '');
     setSendSuspensionEmail(kiwify.settings.sendSuspensionEmail !== false);
     setMembers(mem.members);
+    setEmailTemplates(tplRes.templates);
   }, []);
 
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
+
+  const activeTemplate = useMemo(
+    () => emailTemplates.find((t) => t.type === selectedTplType) ?? null,
+    [emailTemplates, selectedTplType],
+  );
+
+  // Sincroniza rascunho ao trocar o tipo selecionado ou ao carregar pela primeira vez
+  useEffect(() => {
+    if (!activeTemplate) return;
+    setDraftSubject(activeTemplate.subject);
+    setDraftHtml(activeTemplate.html);
+    setLivePreview({
+      subject: activeTemplate.previewSubject,
+      html: activeTemplate.previewHtml,
+    });
+  }, [activeTemplate]);
+
+  // Atualiza a prévia visual automaticamente conforme o admin edita o HTML ou Assunto
+  useEffect(() => {
+    if (!activeTemplate) return;
+    const timer = window.setTimeout(() => {
+      void apiFetch<{ subject: string; html: string }>('/api/admin/email/preview', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: selectedTplType,
+          subject: draftSubject,
+          html: draftHtml,
+        }),
+      })
+        .then((res) => setLivePreview({ subject: res.subject, html: res.html }))
+        .catch(() => {
+          /* mantém última prévia válida */
+        });
+    }, 240);
+    return () => window.clearTimeout(timer);
+  }, [activeTemplate, selectedTplType, draftSubject, draftHtml]);
 
   const detectedPublicOrigin = hosting?.publicOrigin || window.location.origin;
   const effectiveBaseUrl = (appBaseUrl.trim() || detectedPublicOrigin).replace(/\/+$/, '');
@@ -620,21 +681,73 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
     }
   };
 
-  const openEmailPreview = async (
-    nextType: 'welcome' | 'reset' | 'reactivated' | 'suspended' | 'test' = previewType,
-  ) => {
-    setPreviewType(nextType);
-    setPreviewOpen(true);
-    setPreviewLoading(true);
+  const scrollToEmailEditor = () => {
+    editorSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const insertVariable = (varKey: string) => {
+    const tokenText = `{{${varKey}}}`;
+    const el = htmlTextareaRef.current;
+    if (!el) {
+      setDraftHtml((prev) => `${prev}${tokenText}`);
+      return;
+    }
+    const start = el.selectionStart ?? draftHtml.length;
+    const end = el.selectionEnd ?? draftHtml.length;
+    const next = `${draftHtml.slice(0, start)}${tokenText}${draftHtml.slice(end)}`;
+    setDraftHtml(next);
+    window.requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + tokenText.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const saveEmailTemplate = async () => {
+    setSavingTpl(true);
     try {
-      const res = await apiFetch<{ subject: string; html: string }>(
-        `/api/admin/email/preview?type=${encodeURIComponent(nextType)}`,
+      const res = await apiFetch<{ template?: EmailTemplateItem; templates: EmailTemplateItem[] }>(
+        `/api/admin/email/templates/${selectedTplType}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            subject: draftSubject,
+            html: draftHtml,
+          }),
+        },
       );
-      setPreviewData(res);
+      setEmailTemplates(res.templates);
+      if (res.template) {
+        setDraftSubject(res.template.subject);
+        setDraftHtml(res.template.html);
+        setLivePreview({ subject: res.template.previewSubject, html: res.template.previewHtml });
+      }
+      toast('Modelo HTML do e-mail salvo!');
     } catch (e2) {
-      toast(e2 instanceof Error ? e2.message : 'Não foi possível carregar a prévia do e-mail.');
+      toast(e2 instanceof Error ? e2.message : 'Erro ao salvar modelo HTML.');
     } finally {
-      setPreviewLoading(false);
+      setSavingTpl(false);
+    }
+  };
+
+  const resetEmailTemplate = async () => {
+    setResettingTpl(true);
+    try {
+      const res = await apiFetch<{ template?: EmailTemplateItem; templates: EmailTemplateItem[] }>(
+        `/api/admin/email/templates/${selectedTplType}`,
+        { method: 'DELETE' },
+      );
+      setEmailTemplates(res.templates);
+      if (res.template) {
+        setDraftSubject(res.template.subject);
+        setDraftHtml(res.template.html);
+        setLivePreview({ subject: res.template.previewSubject, html: res.template.previewHtml });
+      }
+      toast('Modelo restaurado para o padrão CongelaFit.');
+    } catch (e2) {
+      toast(e2 instanceof Error ? e2.message : 'Erro ao restaurar modelo padrão.');
+    } finally {
+      setResettingTpl(false);
     }
   };
 
@@ -1176,8 +1289,8 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
             <button type="button" className="btn ghost" onClick={() => void sendTestMail()} disabled={testingEmail}>
               <Icon name="send" size={16} /> {testingEmail ? 'Enviando…' : 'Enviar e-mail de teste'}
             </button>
-            <button type="button" className="btn ghost" onClick={() => void openEmailPreview('welcome')}>
-              <Icon name="eye" size={16} /> Visualizar modelo HTML
+            <button type="button" className="btn ghost" onClick={scrollToEmailEditor}>
+              <Icon name="edit" size={16} /> Editar e visualizar HTML
             </button>
           </div>
 
@@ -1194,6 +1307,148 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
           </div>
         </section>
       </form>
+
+      {/* BLOCO 3B: EDITOR E PRÉVIA DO HTML DOS E-MAILS */}
+      <section ref={editorSectionRef} className="card pad-card stack">
+        <div className="dash-head">
+          <div>
+            <h2>Editor do HTML dos E-mails + Prévia ao Vivo</h2>
+            <p className="small">
+              Edite o código HTML e o assunto de cada e-mail enviado aos alunos e veja na hora como ele aparece na caixa de entrada.
+            </p>
+          </div>
+          {activeTemplate && (
+            <span className={`pill ${activeTemplate.isCustom ? 'soon' : 'ok'}`}>
+              {activeTemplate.isCustom ? 'HTML personalizado ativo' : 'Padrão CongelaFit'}
+            </span>
+          )}
+        </div>
+
+        <div className="chips compact">
+          {emailTemplates.map((tpl) => (
+            <button
+              key={tpl.type}
+              type="button"
+              className={`chip ${selectedTplType === tpl.type ? 'on' : ''}`}
+              onClick={() => setSelectedTplType(tpl.type)}
+            >
+              {tpl.label} {tpl.isCustom ? '•' : ''}
+            </button>
+          ))}
+        </div>
+
+        {activeTemplate && (
+          <>
+            <p className="small">{activeTemplate.description}</p>
+            <div className="email-editor-grid">
+              <div className="stack">
+                <div className="field">
+                  <label htmlFor="tpl-subject">Assunto do e-mail</label>
+                  <input
+                    id="tpl-subject"
+                    type="text"
+                    value={draftSubject}
+                    onChange={(e) => setDraftSubject(e.target.value)}
+                    placeholder={activeTemplate.defaultSubject}
+                  />
+                </div>
+
+                <div className="stack" style={{ gap: 6 }}>
+                  <span className="small">
+                    <b>Variáveis automáticas</b> (clique para inserir no HTML):
+                  </span>
+                  <div className="var-chips">
+                    {activeTemplate.variables.map((v) => (
+                      <button
+                        key={v.key}
+                        type="button"
+                        className="var-chip"
+                        onClick={() => insertVariable(v.key)}
+                        title={`Inserir {{${v.key}}} (${v.label})`}
+                      >
+                        {`{{${v.key}}}`} · {v.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="tpl-html">Código HTML do e-mail</label>
+                  <textarea
+                    ref={htmlTextareaRef}
+                    id="tpl-html"
+                    className="email-code-input"
+                    value={draftHtml}
+                    onChange={(e) => setDraftHtml(e.target.value)}
+                    spellCheck={false}
+                  />
+                </div>
+
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => void saveEmailTemplate()}
+                    disabled={savingTpl}
+                  >
+                    <Icon name="check" size={16} /> {savingTpl ? 'Salvando…' : 'Salvar modelo HTML'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    onClick={() => void resetEmailTemplate()}
+                    disabled={resettingTpl}
+                    title="Restaura o HTML oficial com a logo e as cores do CongelaFit"
+                  >
+                    <Icon name="reset" size={16} />{' '}
+                    {resettingTpl ? 'Restaurando…' : 'Restaurar padrão CongelaFit'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="email-preview-shell">
+                <div className="email-preview-bar">
+                  <div>
+                    <strong className="small" style={{ color: 'var(--ink)' }}>
+                      Como o e-mail fica para o aluno
+                    </strong>
+                    {livePreview?.subject && (
+                      <div className="small">
+                        <b>Assunto:</b> {livePreview.subject}
+                      </div>
+                    )}
+                  </div>
+                  <div className="chips compact">
+                    <button
+                      type="button"
+                      className={`chip ${previewViewport === 'desktop' ? 'on' : ''}`}
+                      onClick={() => setPreviewViewport('desktop')}
+                    >
+                      Desktop
+                    </button>
+                    <button
+                      type="button"
+                      className={`chip ${previewViewport === 'mobile' ? 'on' : ''}`}
+                      onClick={() => setPreviewViewport('mobile')}
+                    >
+                      Celular
+                    </button>
+                  </div>
+                </div>
+
+                {livePreview && (
+                  <iframe
+                    title="Prévia ao vivo do e-mail HTML CongelaFit"
+                    sandbox=""
+                    srcDoc={livePreview.html}
+                    className={`email-preview-frame ${previewViewport === 'mobile' ? 'mobile' : ''}`}
+                  />
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </section>
 
       {/* BLOCO 4: SIMULADOR + CRIAÇÃO MANUAL */}
       <div className="admin-two">
@@ -1496,52 +1751,6 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
           )}
         </section>
       </div>
-
-      <Sheet
-        open={previewOpen}
-        onClose={() => setPreviewOpen(false)}
-        title="Prévia do e-mail HTML (CongelaFit)"
-      >
-        <div className="stack">
-          <div className="chips compact">
-            {(
-              [
-                ['welcome', 'Boas-vindas'],
-                ['reset', 'Nova senha'],
-                ['reactivated', 'Reativação'],
-                ['suspended', 'Suspensão'],
-                ['test', 'Teste'],
-              ] as const
-            ).map(([k, label]) => (
-              <button
-                key={k}
-                type="button"
-                className={`chip ${previewType === k ? 'on' : ''}`}
-                onClick={() => void openEmailPreview(k)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          {previewData?.subject && (
-            <p className="small">
-              <b>Assunto:</b> {previewData.subject}
-            </p>
-          )}
-          {previewLoading ? (
-            <p className="small">Carregando prévia…</p>
-          ) : (
-            previewData && (
-              <iframe
-                title="Prévia do e-mail HTML CongelaFit"
-                sandbox=""
-                srcDoc={previewData.html}
-                className="email-preview-frame"
-              />
-            )
-          )}
-        </div>
-      </Sheet>
     </div>
   );
 }

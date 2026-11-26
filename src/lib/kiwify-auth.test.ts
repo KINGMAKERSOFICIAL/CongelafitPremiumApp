@@ -17,7 +17,10 @@ import {
   buildSuspendedEmail,
   buildTestEmail,
   loadBrandLogoBuffer,
+  renderPreviewForType,
+  sanitizeEmailHtml,
 } from '../../server/mailer.ts';
+import type { AppSettings } from '../../server/types.ts';
 
 describe('autenticação, criptografia e senhas geradas', () => {
   it('gera senhas legíveis fortes com maiúscula, minúscula e número', () => {
@@ -126,5 +129,52 @@ describe('modelos de e-mail HTML com identidade CongelaFit', () => {
       logoSrc: '/icons/logo-mark.png',
     });
     expect(testMail.html).toContain('src="/icons/logo-mark.png"');
+  });
+
+  it('permite HTML editado no admin, sanitiza scripts e renderiza prévia com variáveis', () => {
+    const clean = sanitizeEmailHtml(
+      '<div onclick="alert(1)"><script>steal()</script><a href="javascript:xss()">Link</a><p>Olá {{name}}</p></div>',
+    );
+    expect(clean).not.toContain('<script>');
+    expect(clean).not.toContain('onclick=');
+    expect(clean).not.toContain('javascript:');
+
+    const baseSettings: AppSettings = {
+      officialSiteUrl: 'https://www.congelafit.com.br',
+      kiwifyWebhookToken: 'tok123456',
+      kiwifyCheckoutUrl: 'https://www.congelafit.com.br',
+      kiwifyAffiliateInviteUrl: 'https://kiwify.com.br/',
+      updatedAt: new Date().toISOString(),
+      emailTemplates: {
+        welcome: {
+          subject: 'Bem-vinda {{name}}!',
+          html: '<img src="{{logoUrl}}" /><p>Senha: <b>{{password}}</b></p>',
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    };
+
+    const customSent = buildCredentialsEmail({
+      to: 'joana@exemplo.com',
+      name: 'Joana',
+      password: 'Senha789',
+      loginUrl: 'https://www.congelafit.com.br',
+      settings: baseSettings,
+    });
+    expect(customSent.subject).toBe('Bem-vinda Joana!');
+    expect(customSent.html).toContain(`src="cid:${LOGO_CID}"`);
+    expect(customSent.html).toContain('Senha789');
+
+    const preview = renderPreviewForType({
+      type: 'welcome',
+      settings: baseSettings,
+      loginUrl: 'https://www.congelafit.com.br',
+      overrideSubject: 'Prévia {{name}}',
+      overrideHtml: '<img src="{{logoUrl}}" /><h1>Olá {{name}}</h1><script>bad()</script>',
+    });
+    expect(preview.subject).toBe('Prévia Maria Silva');
+    expect(preview.html).toContain('src="/icons/logo-mark.png"');
+    expect(preview.html).toContain('<h1>Olá Maria Silva</h1>');
+    expect(preview.html).not.toContain('<script>');
   });
 });

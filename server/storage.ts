@@ -103,6 +103,9 @@ export function loadDb(): Database {
       ) {
         mergedSettings.kiwifyAffiliateInviteUrl = 'https://kiwify.com.br/';
       }
+      if (!mergedSettings.emailTemplates || typeof mergedSettings.emailTemplates !== 'object') {
+        mergedSettings.emailTemplates = {};
+      }
       const merged: Database = {
         users: Array.isArray(parsed.users) && parsed.users.length ? parsed.users : def.users,
         settings: mergedSettings,

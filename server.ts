@@ -17,12 +17,12 @@ import {
 } from './server/auth.ts';
 import { fetchKiwifyOAuthToken, fetchKiwifySalesPage, resolveKiwifyApiConfig } from './server/kiwifyApi.ts';
 import {
-  buildCredentialsEmail,
-  buildReactivatedEmail,
-  buildSuspendedEmail,
-  buildTestEmail,
   dispatchEmail,
+  getAllEmailTemplatesState,
+  isEmailTemplateType,
+  renderPreviewForType,
   resolveEmailConfig,
+  sanitizeEmailHtml,
   sendCredentialsEmail,
   sendReactivatedEmail,
   sendSuspendedEmail,
@@ -893,60 +893,102 @@ async function startServer() {
     res.json({ ok: true });
   });
 
+  app.get('/api/admin/email/templates', requireAdmin, (req, res) => {
+    const db = loadDb();
+    const origins = detectHostedOrigins(req);
+    const loginUrl = resolveLoginUrl(db.settings.appBaseUrl, origins.publicOrigin);
+    res.json({
+      templates: getAllEmailTemplatesState({ settings: db.settings, loginUrl }),
+    });
+  });
+
+  app.put('/api/admin/email/templates/:type', requireAdmin, (req, res) => {
+    const type = req.params.type;
+    if (!isEmailTemplateType(type)) {
+      res.status(400).json({ error: 'Tipo de e-mail inválido.' });
+      return;
+    }
+    const rawSubject = typeof req.body?.subject === 'string' ? req.body.subject.trim() : '';
+    const rawHtml = typeof req.body?.html === 'string' ? req.body.html : '';
+    if (!rawSubject) {
+      res.status(400).json({ error: 'Informe o assunto do e-mail.' });
+      return;
+    }
+    if (rawSubject.length > 250) {
+      res.status(400).json({ error: 'O assunto pode ter no máximo 250 caracteres.' });
+      return;
+    }
+    if (!rawHtml.trim()) {
+      res.status(400).json({ error: 'O código HTML do e-mail não pode ficar vazio.' });
+      return;
+    }
+    if (rawHtml.length > 120_000) {
+      res.status(400).json({ error: 'O código HTML ultrapassou o limite de 120 KB.' });
+      return;
+    }
+
+    const db = loadDb();
+    if (!db.settings.emailTemplates) db.settings.emailTemplates = {};
+    const sanitized = sanitizeEmailHtml(rawHtml);
+    const now = new Date().toISOString();
+    db.settings.emailTemplates[type] = {
+      subject: rawSubject.replace(/[\r\n]+/g, ' '),
+      html: sanitized,
+      updatedAt: now,
+    };
+    db.settings.updatedAt = now;
+    saveDb(db);
+
+    const origins = detectHostedOrigins(req);
+    const loginUrl = resolveLoginUrl(db.settings.appBaseUrl, origins.publicOrigin);
+    const templates = getAllEmailTemplatesState({ settings: db.settings, loginUrl });
+    const updated = templates.find((t) => t.type === type);
+    res.json({ ok: true, template: updated, templates });
+  });
+
+  app.delete('/api/admin/email/templates/:type', requireAdmin, (req, res) => {
+    const type = req.params.type;
+    if (!isEmailTemplateType(type)) {
+      res.status(400).json({ error: 'Tipo de e-mail inválido.' });
+      return;
+    }
+    const db = loadDb();
+    if (db.settings.emailTemplates && db.settings.emailTemplates[type]) {
+      delete db.settings.emailTemplates[type];
+      db.settings.updatedAt = new Date().toISOString();
+      saveDb(db);
+    }
+    const origins = detectHostedOrigins(req);
+    const loginUrl = resolveLoginUrl(db.settings.appBaseUrl, origins.publicOrigin);
+    const templates = getAllEmailTemplatesState({ settings: db.settings, loginUrl });
+    const restored = templates.find((t) => t.type === type);
+    res.json({ ok: true, template: restored, templates });
+  });
+
   app.get('/api/admin/email/preview', requireAdmin, (req, res) => {
     const db = loadDb();
     const origins = detectHostedOrigins(req);
     const loginUrl = resolveLoginUrl(db.settings.appBaseUrl, origins.publicOrigin);
-    const officialSiteUrl = db.settings.officialSiteUrl || 'https://www.congelafit.com.br';
-    const rawType = typeof req.query.type === 'string' ? req.query.type : 'welcome';
-    const logoSrc = '/icons/logo-mark.png';
+    const type = isEmailTemplateType(req.query.type) ? req.query.type : 'welcome';
+    res.json(renderPreviewForType({ type, settings: db.settings, loginUrl }));
+  });
 
-    const rendered =
-      rawType === 'reset'
-        ? buildCredentialsEmail({
-            to: 'aluna@exemplo.com',
-            name: 'Maria Silva',
-            password: 'Fit892Kiwify',
-            loginUrl,
-            officialSiteUrl,
-            productName: 'CongelaFit Premium',
-            isReset: true,
-            logoSrc,
-          })
-        : rawType === 'reactivated'
-          ? buildReactivatedEmail({
-              to: 'aluna@exemplo.com',
-              name: 'Maria Silva',
-              loginUrl,
-              officialSiteUrl,
-              logoSrc,
-            })
-          : rawType === 'suspended'
-            ? buildSuspendedEmail({
-                name: 'Maria Silva',
-                reason: 'Assinatura em atraso na Kiwify. Regularize o pagamento para reativar.',
-                checkoutUrl: db.settings.kiwifyCheckoutUrl || officialSiteUrl,
-                officialSiteUrl,
-                logoSrc,
-              })
-            : rawType === 'test'
-              ? buildTestEmail({
-                  loginUrl,
-                  officialSiteUrl,
-                  logoSrc,
-                })
-              : buildCredentialsEmail({
-                  to: 'aluna@exemplo.com',
-                  name: 'Maria Silva',
-                  password: 'Fit892Kiwify',
-                  loginUrl,
-                  officialSiteUrl,
-                  productName: 'CongelaFit Premium',
-                  isReset: false,
-                  logoSrc,
-                });
-
-    res.json(rendered);
+  app.post('/api/admin/email/preview', requireAdmin, (req, res) => {
+    const db = loadDb();
+    const origins = detectHostedOrigins(req);
+    const loginUrl = resolveLoginUrl(db.settings.appBaseUrl, origins.publicOrigin);
+    const type = isEmailTemplateType(req.body?.type) ? req.body.type : 'welcome';
+    const overrideSubject = typeof req.body?.subject === 'string' ? req.body.subject : undefined;
+    const overrideHtml = typeof req.body?.html === 'string' ? req.body.html : undefined;
+    res.json(
+      renderPreviewForType({
+        type,
+        settings: db.settings,
+        loginUrl,
+        overrideSubject,
+        overrideHtml,
+      }),
+    );
   });
 
   app.post('/api/admin/email/test', requireAdmin, async (req: AuthedRequest, res) => {
