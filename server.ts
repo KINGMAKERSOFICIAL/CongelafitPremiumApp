@@ -29,6 +29,12 @@ import {
   sendTestEmail,
 } from './server/mailer.ts';
 import {
+  applyCorsPolicy,
+  applySecurityHeaders,
+  createRateLimiter,
+  extractSafeOriginParts,
+} from './server/security.ts';
+import {
   DATA_DIR,
   UPLOADS_DIR,
   deleteUploadedFileIfLocal,
@@ -52,16 +58,11 @@ function isValidHttpUrl(value: string): boolean {
 }
 
 function detectHostedOrigins(req: express.Request): { requestOrigin: string; publicOrigin: string } {
-  const envOrigin = (process.env.APP_URL || process.env.PUBLIC_URL || '').trim().replace(/\/+$/, '');
-  const protoHeader = (req.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0]?.trim();
-  const proto = protoHeader || req.protocol || 'https';
-  const hostHeader = (req.headers['x-forwarded-host'] as string | undefined)?.split(',')[0]?.trim();
-  const host = hostHeader || req.get('host') || '';
-  const detected = host ? `${proto}://${host}` : '';
-  const requestOrigin = envOrigin || detected;
-  const publicOrigin = requestOrigin.includes('://ais-dev-')
-    ? requestOrigin.replace('://ais-dev-', '://ais-pre-')
-    : requestOrigin;
+  const db = loadDb();
+  const { requestOrigin, publicOrigin } = extractSafeOriginParts(req, [
+    db.settings.appBaseUrl,
+    db.settings.officialSiteUrl,
+  ]);
   return { requestOrigin, publicOrigin };
 }
 
@@ -74,8 +75,11 @@ function cleanText(value: unknown, max = 300): string {
 }
 
 function resolveLoginUrl(settingsBaseUrl: string | undefined, fallbackOrigin?: string): string {
-  const base = (settingsBaseUrl || fallbackOrigin || 'https://www.congelafit.com.br').trim().replace(/\/+$/, '');
-  return isValidHttpUrl(base) ? base : 'https://www.congelafit.com.br';
+  const rawBase = (settingsBaseUrl || fallbackOrigin || 'https://www.congelafit.com.br').trim().replace(/\/+$/, '');
+  const normalized = rawBase.includes('://ais-dev-')
+    ? rawBase.replace('://ais-dev-', '://ais-pre-')
+    : rawBase;
+  return isValidHttpUrl(normalized) ? normalized : 'https://www.congelafit.com.br';
 }
 
 function appendEmailLog(db: ReturnType<typeof loadDb>, log: Parameters<typeof dispatchEmail>[0] extends never ? never : import('./server/types.ts').EmailLog) {
@@ -367,12 +371,14 @@ async function processKiwifyEvent(
 }
 
 async function startServer() {
-  const dbInit = loadDb();
+  loadDb();
   const secret = getSessionSecret(DATA_DIR);
   const { attachUser, requireAuth, requireAdmin } = createAuthMiddleware(() => loadDb(), secret);
 
   const app = express();
+  app.disable('x-powered-by');
   app.set('trust proxy', 1);
+  app.use(applySecurityHeaders);
 
   // Mantém rawBody para validação de assinatura HMAC-SHA1 da Kiwify
   app.use(
@@ -385,11 +391,49 @@ async function startServer() {
   );
   app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
-  app.use('/uploads', express.static(UPLOADS_DIR, { maxAge: '7d' }));
+  app.use(
+    '/uploads',
+    express.static(UPLOADS_DIR, {
+      maxAge: '7d',
+      setHeaders: (res) => {
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; sandbox");
+      },
+    }),
+  );
+
+  app.use(
+    '/api',
+    applyCorsPolicy(() => {
+      const db = loadDb();
+      return [
+        db.settings.officialSiteUrl,
+        db.settings.appBaseUrl,
+        process.env.APP_URL,
+        process.env.SITE_URL,
+      ];
+    }),
+  );
   app.use('/api', attachUser);
 
+  const authLimiter = createRateLimiter({
+    windowMs: 10 * 60_000,
+    max: 15,
+    message: 'Muitas tentativas de acesso. Aguarde alguns minutos antes de tentar novamente.',
+  });
+  const passwordLimiter = createRateLimiter({
+    windowMs: 15 * 60_000,
+    max: 8,
+    message: 'Muitas tentativas de alteração de senha. Aguarde alguns minutos.',
+  });
+  const webhookLimiter = createRateLimiter({
+    windowMs: 60_000,
+    max: 120,
+    message: 'Limite temporário de chamadas de webhook excedido.',
+  });
+
   app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, members: dbInit.users.length });
+    res.json({ ok: true });
   });
 
   // ───────── Autenticação e Área de Membros ─────────
@@ -413,7 +457,7 @@ async function startServer() {
     });
   });
 
-  app.post('/api/auth/login', (req, res) => {
+  app.post('/api/auth/login', authLimiter, (req, res) => {
     const email = normalizeEmail(req.body?.email);
     const password = typeof req.body?.password === 'string' ? req.body.password : '';
     if (!email || !password) {
@@ -472,7 +516,7 @@ async function startServer() {
     res.json({ token, user: publicUser(user) });
   });
 
-  app.post('/api/auth/first-access', (req, res) => {
+  app.post('/api/auth/first-access', authLimiter, (req, res) => {
     const email = normalizeEmail(req.body?.email);
     const password = typeof req.body?.password === 'string' ? req.body.password : '';
     const name = cleanText(req.body?.name, 120);
@@ -565,7 +609,7 @@ async function startServer() {
     res.json({ ok: true });
   });
 
-  app.post('/api/auth/password', requireAuth, (req: AuthedRequest, res) => {
+  app.post('/api/auth/password', passwordLimiter, requireAuth, (req: AuthedRequest, res) => {
     const currentPassword = typeof req.body?.currentPassword === 'string' ? req.body.currentPassword : '';
     const newPassword = typeof req.body?.newPassword === 'string' ? req.body.newPassword : '';
     if (newPassword.length < 6) {
@@ -677,8 +721,8 @@ async function startServer() {
 
   app.get('/api/webhooks/kiwify', handleKiwifyWebhookProbe);
   app.get('/api/webhooks/kiwify/:token', handleKiwifyWebhookProbe);
-  app.post('/api/webhooks/kiwify', handleKiwifyWebhook);
-  app.post('/api/webhooks/kiwify/:token', handleKiwifyWebhook);
+  app.post('/api/webhooks/kiwify', webhookLimiter, handleKiwifyWebhook);
+  app.post('/api/webhooks/kiwify/:token', webhookLimiter, handleKiwifyWebhook);
 
   // ───────── Dados públicos para membros logados ─────────
   app.get('/api/recipe-images', requireAuth, (_req, res) => {

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Request, Response, NextFunction } from 'express';
+import { sanitizeHostHeader } from './security.ts';
 import type { StoredUser } from './types.ts';
 
 export const SESSION_COOKIE = 'cf_session';
@@ -218,17 +219,20 @@ export interface AuthedRequest extends Request {
 }
 
 function isValidMutationOrigin(req: Request): boolean {
-  if (req.headers['x-requested-with'] === 'XMLHttpRequest') return true;
   const origin = req.headers.origin;
-  const host = (req.headers['x-forwarded-host'] as string | undefined)?.split(',')[0]?.trim() || req.get('host');
-  if (origin && host) {
+  const host =
+    sanitizeHostHeader(req.headers['x-forwarded-host'] as string | undefined) ||
+    sanitizeHostHeader(req.get('host'));
+
+  if (origin) {
+    if (!host) return false;
     try {
-      return new URL(origin).host === host;
+      return new URL(origin).host.toLowerCase() === host.toLowerCase();
     } catch {
       return false;
     }
   }
-  return false;
+  return req.headers['x-requested-with'] === 'XMLHttpRequest';
 }
 
 export function createAuthMiddleware(

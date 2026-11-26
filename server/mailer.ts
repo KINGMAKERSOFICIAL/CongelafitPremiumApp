@@ -291,6 +291,7 @@ export async function dispatchEmail(opts: {
     try {
       const payload: Record<string, unknown> = {
         from: fromHeader,
+        reply_to: cfg.fromAddress,
         to: [opts.to],
         subject: opts.subject,
         html: preparedHtml,
@@ -317,6 +318,11 @@ export async function dispatchEmail(opts: {
       });
       if (!resp.ok) {
         const body = await resp.text();
+        if (resp.status === 403 && /domain|verify/i.test(body)) {
+          throw new Error(
+            `Resend HTTP 403: Verifique o domínio do e-mail remetente (${cfg.fromAddress}) no painel do Resend (Domains) antes de disparar.`,
+          );
+        }
         throw new Error(`Resend HTTP ${resp.status}: ${body.slice(0, 180)}`);
       }
       const log: EmailLog = {
@@ -364,6 +370,7 @@ export async function dispatchEmail(opts: {
 
     await transporter.sendMail({
       from: fromHeader,
+      replyTo: cfg.fromAddress,
       to: opts.to,
       subject: opts.subject,
       text: opts.text,

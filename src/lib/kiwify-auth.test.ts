@@ -20,6 +20,7 @@ import {
   renderPreviewForType,
   sanitizeEmailHtml,
 } from '../../server/mailer.ts';
+import { isAllowedDomainOrigin, sanitizeHostHeader } from '../../server/security.ts';
 import type { AppSettings } from '../../server/types.ts';
 
 describe('autenticação, criptografia e senhas geradas', () => {
@@ -176,5 +177,23 @@ describe('modelos de e-mail HTML com identidade CongelaFit', () => {
     expect(preview.html).toContain('src="/icons/logo-mark.png"');
     expect(preview.html).toContain('<h1>Olá Maria Silva</h1>');
     expect(preview.html).not.toContain('<script>');
+  });
+});
+
+describe('segurança de domínio e cabeçalhos Host/Origin', () => {
+  it('rejeita cabeçalhos Host malformados e normaliza hosts válidos', () => {
+    expect(sanitizeHostHeader('www.congelafit.com.br')).toBe('www.congelafit.com.br');
+    expect(sanitizeHostHeader('app.congelafit.com.br:3000')).toBe('app.congelafit.com.br:3000');
+    expect(sanitizeHostHeader('evil.com/path')).toBe('');
+    expect(sanitizeHostHeader('user@evil.com')).toBe('');
+    expect(sanitizeHostHeader('evil.com\r\nX-Test: 1')).toBe('');
+  });
+
+  it('permite apenas origens do domínio oficial CongelaFit, do host atual ou configuradas', () => {
+    expect(isAllowedDomainOrigin('https://www.congelafit.com.br', 'localhost:3000')).toBe(true);
+    expect(isAllowedDomainOrigin('https://app.congelafit.com.br', 'localhost:3000')).toBe(true);
+    expect(isAllowedDomainOrigin('https://meuapp.run.app', 'meuapp.run.app')).toBe(true);
+    expect(isAllowedDomainOrigin('https://site-invasor.com', 'www.congelafit.com.br')).toBe(false);
+    expect(isAllowedDomainOrigin('https://congelafit.com.br.evil.com', 'www.congelafit.com.br')).toBe(false);
   });
 });
