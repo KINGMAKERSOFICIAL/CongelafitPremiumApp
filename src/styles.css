@@ -3361,46 +3361,28 @@ h3 {
 
 /* ───────── instalar aplicativo (iOS e Android) ───────── */
 .install-banner {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 10px 12px;
+  justify-content: center;
+  gap: 7px;
+  justify-self: start;
+  padding: 7px 14px;
   border: 1px solid rgba(13, 165, 232, 0.35);
-  border-radius: 14px;
-  background: linear-gradient(135deg, var(--ice) 0%, #fff 100%);
-  color: var(--ink);
-  text-align: left;
+  border-radius: 999px;
+  background: var(--ice);
+  color: var(--blue-deep);
+  font-size: 13.5px;
+  font-weight: 600;
   cursor: pointer;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
 }
 .install-banner:hover {
   border-color: var(--blue);
-  background: var(--ice);
-}
-.install-banner-ico {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
   background: var(--blue);
   color: #fff;
-  flex: none;
 }
-.install-banner-txt {
-  display: grid;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
-}
-.install-banner-txt b {
-  font-size: 14px;
-  color: var(--ink);
-}
-.install-banner-txt small {
-  font-size: 12px;
-  color: var(--muted);
+.install-banner:hover svg {
+  color: #fff;
 }
 .install-banner > svg {
   color: var(--blue-deep);

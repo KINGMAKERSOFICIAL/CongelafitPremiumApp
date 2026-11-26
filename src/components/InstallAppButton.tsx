@@ -34,7 +34,7 @@ async function triggerDirectInstall(
 }
 
 export function InstallAppButton({ variant = 'topbar' }: { variant?: Variant }) {
-  const { platform, isInstalled, canNativeInstall, installNative } = usePWAInstall();
+  const { isInstalled, canNativeInstall, installNative } = usePWAInstall();
 
   if (isInstalled) return null;
 
@@ -71,14 +71,8 @@ export function InstallAppButton({ variant = 'topbar' }: { variant?: Variant }) 
 
   return (
     <button type="button" className="install-banner" onClick={onTrigger}>
-      <span className="install-banner-ico" aria-hidden="true">
-        <Icon name={platform === 'desktop' ? 'monitor' : 'smartphone'} size={20} />
-      </span>
-      <span className="install-banner-txt">
-        <b>Instalar aplicativo</b>
-        <small>Adicionar direto na tela do aparelho</small>
-      </span>
-      <Icon name="download" size={18} />
+      <Icon name="download" size={16} />
+      <span>Instalar aplicativo</span>
     </button>
   );
 }
