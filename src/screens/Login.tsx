@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Icon } from '../components/Icon';
+import { PasswordInput } from '../components/PasswordInput';
 import { ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
@@ -181,9 +182,8 @@ export function Login() {
               <label htmlFor="auth-pass">
                 {mode === 'first' ? 'Crie sua senha (mín. 6 caracteres)' : 'Senha recebida por e-mail'}
               </label>
-              <input
+              <PasswordInput
                 id="auth-pass"
-                type="password"
                 autoComplete={mode === 'first' ? 'new-password' : 'current-password'}
                 placeholder="••••••••"
                 value={password}
@@ -196,9 +196,8 @@ export function Login() {
           {mode === 'first' && (
             <div className="field">
               <label htmlFor="auth-confirm">Confirmar senha</label>
-              <input
+              <PasswordInput
                 id="auth-confirm"
-                type="password"
                 autoComplete="new-password"
                 placeholder="Repita a senha"
                 value={confirm}

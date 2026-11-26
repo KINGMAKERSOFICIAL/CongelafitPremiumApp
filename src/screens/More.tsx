@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Icon } from '../components/Icon';
+import { PasswordInput } from '../components/PasswordInput';
 import { Sheet } from '../components/Sheet';
 import { useAuth } from '../lib/auth';
 import { toast } from '../lib/toast';
@@ -159,9 +160,9 @@ export function More() {
         <form className="form" onSubmit={handlePass}>
           <div className="field">
             <label htmlFor="cur-pass">Senha atual</label>
-            <input
+            <PasswordInput
               id="cur-pass"
-              type="password"
+              autoComplete="current-password"
               value={curPass}
               onChange={(e) => setCurPass(e.target.value)}
               required
@@ -169,9 +170,9 @@ export function More() {
           </div>
           <div className="field">
             <label htmlFor="new-pass">Nova senha (mín. 6 caracteres)</label>
-            <input
+            <PasswordInput
               id="new-pass"
-              type="password"
+              autoComplete="new-password"
               value={newPass}
               onChange={(e) => setNewPass(e.target.value)}
               required

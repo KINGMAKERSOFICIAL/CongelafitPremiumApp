@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { Link, useSearchParams } from 'react-router-dom';
 import { CATEGORIES, RECIPES, SECTIONS, getCategory, getRecipe, search } from '../data';
 import { Icon } from '../components/Icon';
+import { PasswordInput } from '../components/PasswordInput';
 import { defaultImgUrl } from '../components/Photo';
 import { Sheet } from '../components/Sheet';
 import { apiFetch, readImageAsDataUrl } from '../lib/api';
@@ -425,6 +426,10 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
   const [syncingSales, setSyncingSales] = useState(false);
   const [testingEmail, setTestingEmail] = useState(false);
   const [testEmailDest, setTestEmailDest] = useState('');
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewType, setPreviewType] = useState<'welcome' | 'reset' | 'reactivated' | 'suspended' | 'test'>('welcome');
+  const [previewData, setPreviewData] = useState<{ subject: string; html: string } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [err, setErr] = useState('');
 
   // Simular webhook
@@ -612,6 +617,24 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
       toast(e2 instanceof Error ? e2.message : 'Erro ao enviar e-mail de teste.');
     } finally {
       setTestingEmail(false);
+    }
+  };
+
+  const openEmailPreview = async (
+    nextType: 'welcome' | 'reset' | 'reactivated' | 'suspended' | 'test' = previewType,
+  ) => {
+    setPreviewType(nextType);
+    setPreviewOpen(true);
+    setPreviewLoading(true);
+    try {
+      const res = await apiFetch<{ subject: string; html: string }>(
+        `/api/admin/email/preview?type=${encodeURIComponent(nextType)}`,
+      );
+      setPreviewData(res);
+    } catch (e2) {
+      toast(e2 instanceof Error ? e2.message : 'Não foi possível carregar a prévia do e-mail.');
+    } finally {
+      setPreviewLoading(false);
     }
   };
 
@@ -976,9 +999,8 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
               <label htmlFor="kw-client-secret">
                 Client Secret {settings.hasKiwifyClientSecret && <small>(já salvo — deixe vazio para manter)</small>}
               </label>
-              <input
+              <PasswordInput
                 id="kw-client-secret"
-                type="password"
                 placeholder={settings.hasKiwifyClientSecret ? '••••••••••••' : 'Cole o Client Secret da Kiwify'}
                 value={kiwifyClientSecret}
                 onChange={(e) => setKiwifyClientSecret(e.target.value)}
@@ -1102,9 +1124,8 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
               <label htmlFor="smtp-pass">
                 Senha SMTP / App Password {settings.hasSmtpPass && <small>(já salva — vazio mantém)</small>}
               </label>
-              <input
+              <PasswordInput
                 id="smtp-pass"
-                type="password"
                 placeholder={settings.hasSmtpPass ? '••••••••••••' : 'Senha de aplicativo SMTP'}
                 value={smtpPass}
                 onChange={(e) => setSmtpPass(e.target.value)}
@@ -1118,9 +1139,8 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
                 Resend API Key (alternativa ao SMTP){' '}
                 {settings.hasResendKey && <small>(já salva — vazio mantém)</small>}
               </label>
-              <input
+              <PasswordInput
                 id="resend-key"
-                type="password"
                 placeholder={settings.hasResendKey ? '••••••••••••' : 're_xxxxxxxx...'}
                 value={resendApiKey}
                 onChange={(e) => setResendApiKey(e.target.value)}
@@ -1155,6 +1175,9 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
             />
             <button type="button" className="btn ghost" onClick={() => void sendTestMail()} disabled={testingEmail}>
               <Icon name="send" size={16} /> {testingEmail ? 'Enviando…' : 'Enviar e-mail de teste'}
+            </button>
+            <button type="button" className="btn ghost" onClick={() => void openEmailPreview('welcome')}>
+              <Icon name="eye" size={16} /> Visualizar modelo HTML
             </button>
           </div>
 
@@ -1473,6 +1496,52 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
           )}
         </section>
       </div>
+
+      <Sheet
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        title="Prévia do e-mail HTML (CongelaFit)"
+      >
+        <div className="stack">
+          <div className="chips compact">
+            {(
+              [
+                ['welcome', 'Boas-vindas'],
+                ['reset', 'Nova senha'],
+                ['reactivated', 'Reativação'],
+                ['suspended', 'Suspensão'],
+                ['test', 'Teste'],
+              ] as const
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                className={`chip ${previewType === k ? 'on' : ''}`}
+                onClick={() => void openEmailPreview(k)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {previewData?.subject && (
+            <p className="small">
+              <b>Assunto:</b> {previewData.subject}
+            </p>
+          )}
+          {previewLoading ? (
+            <p className="small">Carregando prévia…</p>
+          ) : (
+            previewData && (
+              <iframe
+                title="Prévia do e-mail HTML CongelaFit"
+                sandbox=""
+                srcDoc={previewData.html}
+                className="email-preview-frame"
+              />
+            )
+          )}
+        </div>
+      </Sheet>
     </div>
   );
 }

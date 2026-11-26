@@ -17,11 +17,16 @@ import {
 } from './server/auth.ts';
 import { fetchKiwifyOAuthToken, fetchKiwifySalesPage, resolveKiwifyApiConfig } from './server/kiwifyApi.ts';
 import {
+  buildCredentialsEmail,
+  buildReactivatedEmail,
+  buildSuspendedEmail,
+  buildTestEmail,
   dispatchEmail,
   resolveEmailConfig,
   sendCredentialsEmail,
   sendReactivatedEmail,
   sendSuspendedEmail,
+  sendTestEmail,
 } from './server/mailer.ts';
 import {
   DATA_DIR,
@@ -888,6 +893,62 @@ async function startServer() {
     res.json({ ok: true });
   });
 
+  app.get('/api/admin/email/preview', requireAdmin, (req, res) => {
+    const db = loadDb();
+    const origins = detectHostedOrigins(req);
+    const loginUrl = resolveLoginUrl(db.settings.appBaseUrl, origins.publicOrigin);
+    const officialSiteUrl = db.settings.officialSiteUrl || 'https://www.congelafit.com.br';
+    const rawType = typeof req.query.type === 'string' ? req.query.type : 'welcome';
+    const logoSrc = '/icons/logo-mark.png';
+
+    const rendered =
+      rawType === 'reset'
+        ? buildCredentialsEmail({
+            to: 'aluna@exemplo.com',
+            name: 'Maria Silva',
+            password: 'Fit892Kiwify',
+            loginUrl,
+            officialSiteUrl,
+            productName: 'CongelaFit Premium',
+            isReset: true,
+            logoSrc,
+          })
+        : rawType === 'reactivated'
+          ? buildReactivatedEmail({
+              to: 'aluna@exemplo.com',
+              name: 'Maria Silva',
+              loginUrl,
+              officialSiteUrl,
+              logoSrc,
+            })
+          : rawType === 'suspended'
+            ? buildSuspendedEmail({
+                name: 'Maria Silva',
+                reason: 'Assinatura em atraso na Kiwify. Regularize o pagamento para reativar.',
+                checkoutUrl: db.settings.kiwifyCheckoutUrl || officialSiteUrl,
+                officialSiteUrl,
+                logoSrc,
+              })
+            : rawType === 'test'
+              ? buildTestEmail({
+                  loginUrl,
+                  officialSiteUrl,
+                  logoSrc,
+                })
+              : buildCredentialsEmail({
+                  to: 'aluna@exemplo.com',
+                  name: 'Maria Silva',
+                  password: 'Fit892Kiwify',
+                  loginUrl,
+                  officialSiteUrl,
+                  productName: 'CongelaFit Premium',
+                  isReset: false,
+                  logoSrc,
+                });
+
+    res.json(rendered);
+  });
+
   app.post('/api/admin/email/test', requireAdmin, async (req: AuthedRequest, res) => {
     const db = loadDb();
     const to = normalizeEmail(req.body?.to) || req.user!.email;
@@ -897,15 +958,11 @@ async function startServer() {
     }
     const origins = detectHostedOrigins(req);
     const loginUrl = resolveLoginUrl(db.settings.appBaseUrl, origins.publicOrigin);
-    const result = await dispatchEmail({
+    const result = await sendTestEmail({
       settings: db.settings,
       secret,
       to,
-      name: 'Teste Administrador',
-      type: 'test',
-      subject: 'CongelaFit Premium — Teste de envio de e-mail',
-      html: `<p>Este é um e-mail de teste do <b>CongelaFit Premium</b>.</p><p>Link de login configurado: <a href="${loginUrl}">${loginUrl}</a></p>`,
-      text: `Este é um e-mail de teste do CongelaFit Premium. Link de login: ${loginUrl}`,
+      loginUrl,
     });
     appendEmailLog(db, result.log);
     saveDb(db);

@@ -9,6 +9,15 @@ import {
   verifySession,
 } from '../../server/auth.ts';
 import { mapKiwifySaleStatus } from '../../server/kiwifyApi.ts';
+import {
+  BRAND_COLORS,
+  LOGO_CID,
+  buildCredentialsEmail,
+  buildReactivatedEmail,
+  buildSuspendedEmail,
+  buildTestEmail,
+  loadBrandLogoBuffer,
+} from '../../server/mailer.ts';
 
 describe('autenticação, criptografia e senhas geradas', () => {
   it('gera senhas legíveis fortes com maiúscula, minúscula e número', () => {
@@ -67,5 +76,55 @@ describe('mapeamento de status da Kiwify (liberação e suspensão)', () => {
     expect(mapKiwifySaleStatus('refunded')).toBe('refunded');
     expect(mapKiwifySaleStatus('chargedback')).toBe('refunded');
     expect(mapKiwifySaleStatus('canceled')).toBe('canceled');
+  });
+});
+
+describe('modelos de e-mail HTML com identidade CongelaFit', () => {
+  it('carrega a logo oficial do CongelaFit em disco para anexo inline (CID)', () => {
+    const buf = loadBrandLogoBuffer();
+    expect(buf).not.toBeNull();
+    expect(buf!.length).toBeGreaterThan(1000);
+  });
+
+  it('gera e-mail de acesso HTML com logo CID, cores padrão e dados escapados', () => {
+    const mail = buildCredentialsEmail({
+      to: 'aluna@congelafit.com.br',
+      name: 'Ana <script>alert(1)</script>',
+      password: 'Fit942Kiwify',
+      loginUrl: 'https://www.congelafit.com.br',
+      officialSiteUrl: 'https://www.congelafit.com.br',
+    });
+
+    expect(mail.html).toContain(`src="cid:${LOGO_CID}"`);
+    expect(mail.html).toContain(BRAND_COLORS.blue);
+    expect(mail.html).toContain(BRAND_COLORS.green);
+    expect(mail.html).toContain(BRAND_COLORS.ice);
+    expect(mail.html).toContain('CONGELA');
+    expect(mail.html).toContain('Fit942Kiwify');
+    expect(mail.html).not.toContain('<script>');
+    expect(mail.html).toContain('&lt;script&gt;');
+  });
+
+  it('gera modelos de reativação, suspensão e teste com URLs seguras', () => {
+    const reactivated = buildReactivatedEmail({
+      to: 'membro@congelafit.com.br',
+      name: 'Carla',
+      loginUrl: 'https://www.congelafit.com.br',
+    });
+    expect(reactivated.html).toContain(BRAND_COLORS.green);
+
+    const suspended = buildSuspendedEmail({
+      name: 'Carlos',
+      reason: 'Atraso na parcela',
+      checkoutUrl: 'javascript:alert(1)',
+    });
+    expect(suspended.html).not.toContain('javascript:');
+    expect(suspended.html).toContain('https://www.congelafit.com.br');
+
+    const testMail = buildTestEmail({
+      loginUrl: 'https://www.congelafit.com.br',
+      logoSrc: '/icons/logo-mark.png',
+    });
+    expect(testMail.html).toContain('src="/icons/logo-mark.png"');
   });
 });
