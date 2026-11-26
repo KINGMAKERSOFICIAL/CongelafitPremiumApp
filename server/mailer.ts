@@ -886,7 +886,7 @@ export function renderPreviewForType(opts: {
   return renderEmailFromRaw(subject, html, {
     name: 'Maria Silva',
     email: 'aluna@exemplo.com',
-    password: 'Fit892Kiwify',
+    password: 'maria12345',
     loginUrl: opts.loginUrl,
     productName: 'CongelaFit Premium',
     reason: 'Assinatura em atraso na Kiwify. Regularize o pagamento para reativar.',

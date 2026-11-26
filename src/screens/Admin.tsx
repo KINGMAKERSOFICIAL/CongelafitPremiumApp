@@ -1541,7 +1541,7 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
             </div>
             <label className="check-inline">
               <input type="checkbox" checked={autoGenPass} onChange={(e) => setAutoGenPass(e.target.checked)} />
-              <span>Gerar senha segura automaticamente</span>
+              <span>Gerar senha inicial automática (padrão: primeironome12345)</span>
             </label>
             <label className="check-inline">
               <input

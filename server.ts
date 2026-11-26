@@ -6,6 +6,7 @@ import {
   clearSessionCookie,
   createAuthMiddleware,
   encryptSecret,
+  generateInitialMemberPassword,
   generateReadablePassword,
   getSessionSecret,
   hashPassword,
@@ -103,7 +104,9 @@ async function provisionMemberAccess(opts: {
   let generatedPassword: string | undefined;
 
   if (shouldGenerate) {
-    generatedPassword = generateReadablePassword(10);
+    generatedPassword = opts.isReset
+      ? generateReadablePassword(10)
+      : generateInitialMemberPassword(opts.user.name, opts.user.email);
     const { hash, salt } = hashPassword(generatedPassword);
     opts.user.passwordHash = hash;
     opts.user.passwordSalt = salt;
@@ -1250,7 +1253,7 @@ async function startServer() {
 
     let generatedPassword: string | undefined;
     if (autoGenerate || (sendEmail && !password)) {
-      password = generateReadablePassword(10);
+      password = generateInitialMemberPassword(name, email);
       generatedPassword = password;
     }
 
@@ -1323,7 +1326,7 @@ async function startServer() {
       user: target,
       secret,
       loginUrl,
-      isReset: true,
+      isReset: (target.loginCount ?? 0) > 0,
     });
     res.json({
       ok: true,

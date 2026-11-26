@@ -66,6 +66,37 @@ export function decryptSecret(encoded: string | undefined, secret: string): stri
 }
 
 const PASS_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+const GENERIC_FIRST_NAMES = new Set(['membro', 'cliente', 'aluno', 'aluna', 'usuario', 'usuaria']);
+
+/**
+ * Gera a senha inicial de novos usuários no formato `<primeironome>12345` (ex.: `dener12345`).
+ * Remove acentos/pontuação, converte para minúsculas e garante pelo menos 6 caracteres.
+ */
+export function generateInitialMemberPassword(name?: string, email?: string): string {
+  const normalizeToken = (raw: string): string =>
+    raw
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+
+  const rawName = (name ?? '').trim();
+  const firstWord = rawName.split(/[\s-]+/)[0] ?? '';
+  let base = normalizeToken(firstWord);
+
+  if (!base || base.length < 2 || GENERIC_FIRST_NAMES.has(base)) {
+    const emailLocal = (email ?? '').split('@')[0] ?? '';
+    const emailFirst = emailLocal.split(/[._+\-\d]+/).find((p) => p.length >= 2) ?? emailLocal;
+    const fromEmail = normalizeToken(emailFirst).replace(/[0-9]+$/g, '');
+    if (fromEmail.length >= 2 && !GENERIC_FIRST_NAMES.has(fromEmail)) {
+      base = fromEmail;
+    } else if (!base || base.length < 2) {
+      base = 'membro';
+    }
+  }
+
+  return `${base.slice(0, 24)}12345`;
+}
 
 export function generateReadablePassword(length = 10): string {
   const chars: string[] = [];

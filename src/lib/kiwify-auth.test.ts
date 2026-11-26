@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   decryptSecret,
   encryptSecret,
+  generateInitialMemberPassword,
   generateReadablePassword,
   hashPassword,
   signSession,
@@ -24,6 +25,15 @@ import { isAllowedDomainOrigin, sanitizeHostHeader } from '../../server/security
 import type { AppSettings } from '../../server/types.ts';
 
 describe('autenticação, criptografia e senhas geradas', () => {
+  it('gera senha inicial de novos usuários como primeironome12345 (ex: dener12345)', () => {
+    expect(generateInitialMemberPassword('Dener', 'dener@exemplo.com')).toBe('dener12345');
+    expect(generateInitialMemberPassword('Dener Silva', 'dener.silva@exemplo.com')).toBe('dener12345');
+    expect(generateInitialMemberPassword('João Pedro', 'joao@exemplo.com')).toBe('joao12345');
+    expect(generateInitialMemberPassword('Áurea-Maria', 'aurea@exemplo.com')).toBe('aurea12345');
+    expect(generateInitialMemberPassword('Membro Kiwify', 'carla.souza@exemplo.com')).toBe('carla12345');
+    expect(generateInitialMemberPassword('', '')).toBe('membro12345');
+  });
+
   it('gera senhas legíveis fortes com maiúscula, minúscula e número', () => {
     for (let i = 0; i < 15; i++) {
       const p = generateReadablePassword(10);
