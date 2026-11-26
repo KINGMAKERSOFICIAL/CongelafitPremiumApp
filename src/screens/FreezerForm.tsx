@@ -13,6 +13,7 @@ import {
   type FreezerItem,
   type PortionUnit,
 } from '../lib/freezer';
+import { trackEvent } from '../lib/api';
 import { useFreezer, useToday } from '../lib/hooks';
 import { uid } from '../lib/store';
 import { toast } from '../lib/toast';
@@ -75,6 +76,7 @@ export function FreezerForm() {
       note: note.trim(),
     };
     set((cur) => (editing ? cur.map((x) => (x.id === item.id ? item : x)) : [...cur, item]));
+    trackEvent('freezer_update', item.recipeId ?? item.id, item.name);
     toast(editing ? 'Alterações salvas.' : 'Adicionado ao freezer.');
     nav(thenLabel ? `/freezer/etiqueta/${item.id}` : '/freezer');
   };

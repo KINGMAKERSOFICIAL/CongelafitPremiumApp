@@ -17,6 +17,7 @@ import {
   unitText,
   type FreezerItem,
 } from '../lib/freezer';
+import { trackEvent } from '../lib/api';
 import { useFreezer, useToday } from '../lib/hooks';
 import { toast } from '../lib/toast';
 
@@ -183,11 +184,15 @@ export function Freezer() {
               onEat={() => {
                 const last = it.portions <= 1;
                 set((cur) => consumeOne(cur, it.id));
+                trackEvent('freezer_update', it.id, `${it.name} (consumo)`);
                 toast(
                   last ? `${it.name}: acabou! Saiu do freezer.` : `${it.name}: restam ${it.portions - 1}.`,
                 );
               }}
-              onAdd={() => set((cur) => addOne(cur, it.id))}
+              onAdd={() => {
+                set((cur) => addOne(cur, it.id));
+                trackEvent('freezer_update', it.id, `${it.name} (+1 porção)`);
+              }}
               onDelete={() => setDel(it)}
             />
           ))}
@@ -212,7 +217,10 @@ export function Freezer() {
         confirmLabel="Excluir"
         onNo={() => setDel(null)}
         onYes={() => {
-          if (del) set((cur) => cur.filter((x) => x.id !== del.id));
+          if (del) {
+            set((cur) => cur.filter((x) => x.id !== del.id));
+            trackEvent('freezer_update', del.id, `${del.name} (excluído)`);
+          }
           setDel(null);
           toast('Item excluído.');
         }}

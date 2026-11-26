@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { getCategory } from '../data';
+import { trackEvent } from '../lib/api';
 import { useFavorites } from '../lib/store';
 import type { Recipe } from '../types';
 import { basisLabel } from '../lib/text';
@@ -18,6 +19,7 @@ export function FavButton({ id, title, className = '' }: { id: string; title: st
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
+        if (!on) trackEvent('favorite_toggle', id, title);
         fav.toggle(id);
       }}
     >

@@ -131,7 +131,7 @@ export function ShopItems() {
                     target="_blank"
                     rel="noopener noreferrer"
                     className="btn sm"
-                    onClick={() => trackEvent('product_click', p.id)}
+                    onClick={() => trackEvent('product_click', p.id, p.title)}
                   >
                     <Icon name="external" size={15} /> Adquirir item
                   </a>

@@ -65,10 +65,47 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   return data as T;
 }
 
-export function trackEvent(type: 'recipe_view' | 'product_click' | 'referral_share', id?: string): void {
+export type UserActivityEventType =
+  | 'login'
+  | 'recipe_view'
+  | 'favorite_toggle'
+  | 'freezer_update'
+  | 'planner_update'
+  | 'shopping_update'
+  | 'shopping_share'
+  | 'shopping_pdf'
+  | 'guide_view'
+  | 'product_click'
+  | 'referral_share'
+  | 'app_install';
+
+export function apiPutKeepalive(path: string, body: unknown): void {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest',
+  };
+  if (memoryToken) {
+    headers.Authorization = `Bearer ${memoryToken}`;
+  }
+  try {
+    void fetch(path, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(body),
+      credentials: 'include',
+      keepalive: true,
+    }).catch(() => {
+      /* silencioso */
+    });
+  } catch {
+    /* silencioso */
+  }
+}
+
+export function trackEvent(type: UserActivityEventType, id?: string, label?: string): void {
   void apiFetch('/api/analytics/event', {
     method: 'POST',
-    body: JSON.stringify({ type, id }),
+    body: JSON.stringify({ type, id, label }),
   }).catch(() => {
     /* silencioso */
   });

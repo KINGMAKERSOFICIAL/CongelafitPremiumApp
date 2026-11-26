@@ -111,6 +111,18 @@ describe('proteção anti-print e anti-captura (sem marca d’água)', () => {
         false,
       ),
     ).toBe('devtools');
+    expect(
+      classifyBlockedShortcut(
+        { key: 'K', code: 'KeyK', keyCode: 75, ctrlKey: true, metaKey: false, shiftKey: true, altKey: false },
+        false,
+      ),
+    ).toBe('devtools');
+    expect(
+      classifyBlockedShortcut(
+        { key: 'F9', code: 'F9', keyCode: 120, ctrlKey: false, metaKey: false, shiftKey: true, altKey: false },
+        false,
+      ),
+    ).toBe('devtools');
   });
 });
 

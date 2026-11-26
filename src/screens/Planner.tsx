@@ -21,6 +21,7 @@ import {
   type Goal,
   type Slot,
 } from '../lib/planner';
+import { trackEvent } from '../lib/api';
 import { useFavorites } from '../lib/store';
 import { toast } from '../lib/toast';
 import { basisLabel } from '../lib/text';
@@ -58,6 +59,7 @@ export function Planner() {
       variation: Math.floor(Math.random() * 1_000_000),
     });
     set(() => res.plan);
+    trackEvent('planner_update', goal, `Cardápio automático (${res.added} refeições)`);
     setAuto(false);
     toast(
       res.added
@@ -69,6 +71,7 @@ export function Planner() {
   const toShopping = () => {
     if (counts.size === 0) return toast('Planeje algumas receitas primeiro.');
     shop.setRec((cur) => [...counts].reduce((acc, [id, n]) => ensureShopRecipe(acc, id, n), cur));
+    trackEvent('shopping_update', weekStart, `Lista da semana (${counts.size} receitas)`);
     toast(`${counts.size} receitas na lista de compras.`, { to: '/compras', linkLabel: 'Ver lista' });
   };
 
@@ -220,7 +223,10 @@ export function Planner() {
         }
         onClose={() => setPicker(null)}
         onPick={(r) => {
-          if (picker) set((cur) => addTo(cur, picker.date, picker.slot, r.id));
+          if (picker) {
+            set((cur) => addTo(cur, picker.date, picker.slot, r.id));
+            trackEvent('planner_update', r.id, r.title);
+          }
           setPicker(null);
           toast(`${r.title} adicionada.`);
         }}

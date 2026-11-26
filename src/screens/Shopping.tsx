@@ -4,6 +4,7 @@ import { Icon } from '../components/Icon';
 import { RecipePicker } from '../components/RecipePicker';
 import { ConfirmSheet } from '../components/Sheet';
 import { getRecipe } from '../data';
+import { trackEvent } from '../lib/api';
 import { addShopRecipe, useShopLines } from '../lib/hooks';
 import { formatAmounts, groupBySection, parseLine, shareText, type ShopLine } from '../lib/shopping';
 import { shareShoppingList } from '../lib/share';
@@ -50,6 +51,7 @@ export function Shopping() {
     const t = text.trim();
     if (!t) return;
     setMan((cur) => [...cur, { id: uid(), text: t.slice(0, 80) }]);
+    trackEvent('shopping_update', 'manual', t.slice(0, 80));
     setText('');
   };
 
@@ -251,6 +253,7 @@ export function Shopping() {
         onClose={() => setPick(false)}
         onPick={(r) => {
           setRec((cur) => addShopRecipe(cur, r.id, 1));
+          trackEvent('shopping_update', r.id, r.title);
           setPick(false);
           toast(`${r.title} na lista.`);
         }}

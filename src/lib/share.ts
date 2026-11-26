@@ -36,7 +36,7 @@ export async function shareShoppingList(text: string, pdf: Promise<Blob>): Promi
   if (typeof navigator.canShare === 'function' && navigator.canShare(data)) {
     try {
       await navigator.share(data);
-      trackEvent('referral_share', 'shopping_list');
+      trackEvent('shopping_share', 'shopping_list', 'Lista de compras (Compartilhar/PDF)');
       return;
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return; // a pessoa cancelou
@@ -45,6 +45,6 @@ export async function shareShoppingList(text: string, pdf: Promise<Blob>): Promi
   }
   download(blob);
   openWhatsApp(text);
-  trackEvent('referral_share', 'shopping_list');
+  trackEvent('shopping_share', 'shopping_list', 'Lista de compras (WhatsApp + PDF)');
   toast('PDF baixado. No WhatsApp, anexe o arquivo à mensagem.');
 }

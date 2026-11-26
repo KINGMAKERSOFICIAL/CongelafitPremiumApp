@@ -3107,6 +3107,53 @@ h3 {
   flex-wrap: wrap;
   gap: 6px;
 }
+.adopt-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.adopt-row {
+  display: grid;
+  gap: 5px;
+}
+.adopt-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13.5px;
+}
+.adopt-head span {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.adopt-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--ice2);
+  overflow: hidden;
+}
+.adopt-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--blue) 0%, var(--green) 100%);
+  min-width: 2px;
+}
+.user-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+}
+.user-meta-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 4px;
+}
 .email-editor-grid {
   display: grid;
   gap: 18px;

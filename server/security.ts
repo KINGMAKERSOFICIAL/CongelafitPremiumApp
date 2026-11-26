@@ -97,12 +97,207 @@ export function isAllowedDomainOrigin(
   return false;
 }
 
+const BLOCKED_PATH_PREFIXES = [
+  '/.congelafit-data',
+  '/.env',
+  '/.git',
+  '/.svn',
+  '/.hg',
+  '/.htaccess',
+  '/.htpasswd',
+  '/server/',
+  '/package.json',
+  '/package-lock.json',
+  '/tsconfig.json',
+  '/vite.config',
+  '/wp-admin',
+  '/wp-login',
+  '/wp-content',
+  '/wp-includes',
+  '/xmlrpc.php',
+  '/phpmyadmin',
+  '/adminer',
+  '/actuator',
+  '/cgi-bin',
+];
+
+const BLOCKED_EXT_RE = /\.(sqlite|sqlite3|sqlite-wal|sqlite-shm|db|bak|sql|tar|gz|zip|rar|7z|log|php|asp|aspx|jsp|env|ini|pem|key|map)$/i;
+
+const EXTRACTOR_UA_RE =
+  /(httrack|webcopier|teleport|offline explorer|cyotek|sitesucker|blackwidow|webzip|backstreet|wget|curl\/|python-requests|python-urllib|aiohttp|httpx|scrapy|go-http-client|libwww-perl|nikto|sqlmap|nmap|masscan|dirbuster|gobuster|feroxbuster|wpscan|nuclei|zgrab|nessus|acunetix|harvest)/i;
+
+export function isBlockedProbePath(rawUrl: string): boolean {
+  const pathOnly = rawUrl.split('?')[0]?.trim().toLowerCase() ?? '';
+  if (!pathOnly) return false;
+  if (pathOnly.includes('..') || pathOnly.includes('%2e%2e') || pathOnly.includes('\0')) {
+    return true;
+  }
+  for (const prefix of BLOCKED_PATH_PREFIXES) {
+    if (pathOnly === prefix || pathOnly.startsWith(`${prefix}/`) || pathOnly.startsWith(prefix)) {
+      return true;
+    }
+  }
+  if (BLOCKED_EXT_RE.test(pathOnly)) {
+    return true;
+  }
+  return false;
+}
+
+export function isBlockedExtractorUserAgent(ua: string | undefined): boolean {
+  if (!ua) return false;
+  return EXTRACTOR_UA_RE.test(ua);
+}
+
+export interface BlockedSecurityEvent {
+  eventType: 'probe_path' | 'extractor_ua' | 'brute_force' | 'invalid_content_type';
+  ip: string;
+  path: string;
+  userAgent: string;
+  detail: string;
+}
+
+export function extractClientIp(req: Request): string {
+  const fwd = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim();
+  return fwd || req.ip || 'unknown';
+}
+
+export function createBlockExtractorAndProbeMiddleware(onBlock?: (ev: BlockedSecurityEvent) => void) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const rawUrl = req.originalUrl || req.url || '';
+    const pathOnly = (req.path || rawUrl).split('?')[0]?.toLowerCase() ?? '';
+    const ua = req.get('user-agent') ?? '';
+    const ip = extractClientIp(req);
+
+    if (isBlockedProbePath(rawUrl)) {
+      onBlock?.({
+        eventType: 'probe_path',
+        ip,
+        path: pathOnly,
+        userAgent: ua,
+        detail: `Tentativa de acesso a rota protegida: ${pathOnly}`,
+      });
+      res.status(403).type('text/plain').send('Acesso bloqueado pela proteção do CongelaFit.');
+      return;
+    }
+
+    // Webhook da Kiwify e healthcheck podem receber chamadas server-to-server
+    const isWebhookOrHealth =
+      pathOnly === '/api/health' ||
+      pathOnly === '/api/webhooks/kiwify' ||
+      pathOnly.startsWith('/api/webhooks/kiwify/');
+
+    if (!isWebhookOrHealth && isBlockedExtractorUserAgent(ua)) {
+      onBlock?.({
+        eventType: 'extractor_ua',
+        ip,
+        path: pathOnly,
+        userAgent: ua,
+        detail: `Ferramenta de extração/scanner bloqueada (${ua.slice(0, 60)})`,
+      });
+      res.status(403).json({ error: 'Extração automatizada bloqueada pela segurança do CongelaFit.' });
+      return;
+    }
+
+    next();
+  };
+}
+
+export const blockExtractorAndProbeMiddleware = createBlockExtractorAndProbeMiddleware();
+
+export function createLoginBruteForceGuard(onBlock?: (ev: BlockedSecurityEvent) => void) {
+  const attempts = new Map<string, { fails: number; lockedUntil: number; firstFailAt: number }>();
+  const WINDOW_MS = 15 * 60_000;
+  const LOCK_MS = 10 * 60_000;
+  const MAX_FAILS = 5;
+
+  const keyFor = (req: Request, email: string) => `${extractClientIp(req)}|${email.toLowerCase()}`;
+
+  const checkLocked = (req: Request, email: string): { locked: boolean; retryAfterSec: number } => {
+    const now = Date.now();
+    if (attempts.size > 3000) {
+      for (const [k, v] of attempts) {
+        if (v.lockedUntil <= now && now - v.firstFailAt > WINDOW_MS) attempts.delete(k);
+      }
+    }
+    const entry = attempts.get(keyFor(req, email));
+    if (entry && entry.lockedUntil > now) {
+      return { locked: true, retryAfterSec: Math.max(1, Math.ceil((entry.lockedUntil - now) / 1000)) };
+    }
+    return { locked: false, retryAfterSec: 0 };
+  };
+
+  const recordFailure = (req: Request, email: string) => {
+    const now = Date.now();
+    const k = keyFor(req, email);
+    const cur = attempts.get(k);
+    if (!cur || now - cur.firstFailAt > WINDOW_MS) {
+      attempts.set(k, { fails: 1, lockedUntil: 0, firstFailAt: now });
+      return;
+    }
+    cur.fails += 1;
+    if (cur.fails >= MAX_FAILS) {
+      cur.lockedUntil = now + LOCK_MS;
+      onBlock?.({
+        eventType: 'brute_force',
+        ip: extractClientIp(req),
+        path: req.path || '/api/auth/login',
+        userAgent: req.get('user-agent') ?? '',
+        detail: `Bloqueio temporário após ${cur.fails} tentativas inválidas`,
+      });
+    }
+  };
+
+  const clearFailures = (req: Request, email: string) => {
+    attempts.delete(keyFor(req, email));
+  };
+
+  return { checkLocked, recordFailure, clearFailures };
+}
+
+export function requireJsonMutationMiddleware(req: Request, res: Response, next: NextFunction): void {
+  if (!['POST', 'PUT', 'PATCH'].includes(req.method)) {
+    next();
+    return;
+  }
+  const pathOnly = (req.path || req.originalUrl || '').split('?')[0]?.toLowerCase() ?? '';
+  if (
+    pathOnly === '/webhooks/kiwify' ||
+    pathOnly.startsWith('/webhooks/kiwify/') ||
+    pathOnly === '/api/webhooks/kiwify' ||
+    pathOnly.startsWith('/api/webhooks/kiwify/') ||
+    pathOnly === '/auth/logout' ||
+    pathOnly === '/api/auth/logout'
+  ) {
+    next();
+    return;
+  }
+  const contentLength = Number(req.headers['content-length'] || '0');
+  if (contentLength === 0 && !req.headers['transfer-encoding']) {
+    next();
+    return;
+  }
+  const ct = (req.headers['content-type'] || '').toLowerCase();
+  if (!ct.includes('application/json')) {
+    res.status(415).json({ error: 'Formato de requisição não aceito.' });
+    return;
+  }
+  next();
+}
+
 export function applySecurityHeaders(req: Request, res: Response, next: NextFunction): void {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
   res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
+  res.setHeader('Content-Security-Policy', "object-src 'none'; base-uri 'self'; form-action 'self'");
+
+  const pathOnly = (req.path || req.originalUrl || '').toLowerCase();
+  if (pathOnly.startsWith('/api/')) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+  }
 
   const proto = (req.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0]?.trim();
   if (req.secure || proto === 'https' || process.env.NODE_ENV === 'production') {

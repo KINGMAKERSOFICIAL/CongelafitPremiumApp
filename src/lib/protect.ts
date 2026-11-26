@@ -56,11 +56,17 @@ export function classifyBlockedShortcut(
   if (mod && (k === 's' || k === 'u')) {
     return 'save';
   }
-  // DevTools (F12, Ctrl/Cmd+Shift+I/J/C, Cmd+Opt+I/J/C)
+  // DevTools (F12, Ctrl/Cmd+Shift+I/J/C/K/E/M, Cmd+Opt+I/J/C/K, Shift+F5/F7/F9)
   if (k === 'f12' || code === 'f12') {
     return 'devtools';
   }
-  if ((mod && e.shiftKey && ['i', 'j', 'c'].includes(k)) || (e.metaKey && e.altKey && ['i', 'j', 'c'].includes(k))) {
+  if (e.shiftKey && ['f5', 'f7', 'f9'].includes(k)) {
+    return 'devtools';
+  }
+  if (
+    (mod && e.shiftKey && ['i', 'j', 'c', 'k', 'e', 'm'].includes(k)) ||
+    (e.metaKey && e.altKey && ['i', 'j', 'c', 'k'].includes(k))
+  ) {
     return 'devtools';
   }
   return null;
@@ -168,12 +174,30 @@ export function installProtection({ veil, printable }: ProtectionHooks): () => v
     veil(true);
   };
 
+  const isDockedDevtoolsOpen = (): boolean => {
+    try {
+      if (window.self !== window.top) return false;
+      const wGap = window.outerWidth - window.innerWidth;
+      const hGap = window.outerHeight - window.innerHeight;
+      return wGap > 220 || hGap > 220;
+    } catch {
+      return false;
+    }
+  };
+
+  const checkDockedDevtools = () => {
+    if (isDockedDevtoolsOpen()) {
+      clearSelection();
+      veil(true);
+    }
+  };
+
   const show = () => {
-    if (document.visibilityState === 'visible') veil(false);
+    if (document.visibilityState === 'visible' && !isDockedDevtoolsOpen()) veil(false);
   };
 
   const onTapReveal = () => {
-    if (document.visibilityState === 'visible' && document.hasFocus()) {
+    if (document.visibilityState === 'visible' && document.hasFocus() && !isDockedDevtoolsOpen()) {
       clearTimeout(timer);
       veil(false);
     }
@@ -187,7 +211,7 @@ export function installProtection({ veil, printable }: ProtectionHooks): () => v
   };
 
   const onAfterPrint = () => {
-    if (document.visibilityState === 'visible' && document.hasFocus()) {
+    if (document.visibilityState === 'visible' && document.hasFocus() && !isDockedDevtoolsOpen()) {
       veil(false);
     }
   };
@@ -195,7 +219,7 @@ export function installProtection({ veil, printable }: ProtectionHooks): () => v
   const printMq = window.matchMedia?.('print');
   const onPrintMq = (e: MediaQueryListEvent) => {
     if (e.matches && !printable()) veil(true);
-    else if (document.visibilityState === 'visible' && document.hasFocus()) veil(false);
+    else if (document.visibilityState === 'visible' && document.hasFocus() && !isDockedDevtoolsOpen()) veil(false);
   };
 
   // Intercepta chamadas diretas a window.print() fora da página de etiqueta do freezer.
@@ -232,13 +256,17 @@ export function installProtection({ veil, printable }: ProtectionHooks): () => v
   window.addEventListener('pageshow', show);
   window.addEventListener('blur', hide);
   window.addEventListener('focus', show);
+  window.addEventListener('resize', checkDockedDevtools);
   window.addEventListener('beforeprint', onBeforePrint);
   window.addEventListener('afterprint', onAfterPrint);
   window.addEventListener('pointerdown', onTapReveal, true);
   printMq?.addEventListener?.('change', onPrintMq);
+  const devtoolsTimer = window.setInterval(checkDockedDevtools, 2500);
+  checkDockedDevtools();
 
   return () => {
     clearTimeout(timer);
+    window.clearInterval(devtoolsTimer);
     if (printPatched && originalPrint) {
       try {
         Object.defineProperty(window, 'print', {
@@ -263,6 +291,7 @@ export function installProtection({ veil, printable }: ProtectionHooks): () => v
     window.removeEventListener('pageshow', show);
     window.removeEventListener('blur', hide);
     window.removeEventListener('focus', show);
+    window.removeEventListener('resize', checkDockedDevtools);
     window.removeEventListener('beforeprint', onBeforePrint);
     window.removeEventListener('afterprint', onAfterPrint);
     window.removeEventListener('pointerdown', onTapReveal, true);

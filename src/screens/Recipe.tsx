@@ -72,7 +72,7 @@ export function Recipe() {
   useEffect(() => {
     if (r) {
       document.title = `${r.title} · CongelaFit Premium`;
-      trackEvent('recipe_view', r.id);
+      trackEvent('recipe_view', r.id, r.title);
     }
     return () => {
       document.title = 'CongelaFit Premium';
@@ -103,6 +103,7 @@ export function Recipe() {
   const rule = freezeRuleFor(r);
   const toShopping = () => {
     shop.setRec((cur) => addShopRecipe(cur, r.id, factor));
+    trackEvent('shopping_update', r.id, r.title);
     toast(
       `${r.title} na lista de compras${factor !== 1 ? ` (${FACTORS.find((o) => o.f === factor)?.label})` : ''}.`,
       {
@@ -120,6 +121,7 @@ export function Recipe() {
   const confirmPlan = () => {
     if (!planDate || planFull) return;
     setPlan((cur) => addTo(cur, planDate, planSlot, r.id));
+    trackEvent('planner_update', r.id, r.title);
     setPlanOpen(false);
     toast(`${r.title} no planner (${WEEKDAYS[weekdayIndex(planDate)]}, ${fmtDM(planDate)}).`, {
       to: '/planner',

@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+import path from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -6,6 +7,17 @@ import { VitePWA } from 'vite-plugin-pwa';
 // base './' => funciona em qualquer endereço (GitHub Pages, domínio próprio, abrir local).
 export default defineConfig({
   base: './',
+  resolve: {
+    alias: {
+      '@catalog-source': path.resolve(
+        __dirname,
+        process.env.VITEST ? 'src/data/recipes.json' : 'src/data/emptyBook.ts',
+      ),
+    },
+  },
+  build: {
+    sourcemap: false,
+  },
   server: {
     host: '0.0.0.0',
     port: 3000,

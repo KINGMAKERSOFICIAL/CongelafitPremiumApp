@@ -141,10 +141,15 @@ export function verifyPassword(password: string, hash: string, salt: string): bo
 export interface SessionPayload {
   uid: string;
   exp: number;
+  ver?: string;
 }
 
-export function signSession(userId: string, secret: string): string {
-  const payload: SessionPayload = { uid: userId, exp: Date.now() + SESSION_TTL_MS };
+export function signSession(userId: string, secret: string, ver?: string): string {
+  const payload: SessionPayload = {
+    uid: userId,
+    exp: Date.now() + SESSION_TTL_MS,
+    ...(ver ? { ver } : {}),
+  };
   const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
   const sig = crypto.createHmac('sha256', secret).update(body).digest('base64url');
   return `${body}.${sig}`;
@@ -276,7 +281,9 @@ export function createAuthMiddleware(
     const session = verifySession(token, secret);
     if (session) {
       const user = getDb().users.find((u) => u.id === session.uid);
-      if (user) {
+      const currentVer = user?.passwordHash ? user.passwordHash.slice(0, 12) : '';
+      const versionMatches = !session.ver || session.ver === currentVer;
+      if (user && versionMatches) {
         if (user.status === 'active') {
           req.user = user;
         } else {

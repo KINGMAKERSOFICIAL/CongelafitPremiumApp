@@ -1,9 +1,17 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import { apiFetch, apiPutKeepalive } from './api';
 import { buildBackup, isBackupKey, type Backup } from './backup';
 
 const PREFIX = 'cfc:';
+const OWNER_KEY = 'cfc:__owner';
 const listeners = new Set<() => void>();
 const cache = new Map<string, string | null>();
+
+let activeSyncUserId: string | null = null;
+let hydratingUserId: string | null = null;
+let syncTimer: number | null = null;
+let dirty = false;
+let lifecycleBound = false;
 
 function raw(key: string): string | null {
   if (cache.has(key)) return cache.get(key) ?? null;
@@ -17,7 +25,7 @@ function raw(key: string): string | null {
   return v;
 }
 
-function save(key: string, value: string | null) {
+function setLocalRaw(key: string, value: string | null) {
   cache.set(key, value);
   try {
     if (value === null) localStorage.removeItem(PREFIX + key);
@@ -25,7 +33,30 @@ function save(key: string, value: string | null) {
   } catch {
     /* ignora */
   }
+}
+
+function notify() {
   listeners.forEach((l) => l());
+}
+
+function scheduleCloudSync() {
+  if (!activeSyncUserId || typeof window === 'undefined') return;
+  dirty = true;
+  if (syncTimer !== null) {
+    window.clearTimeout(syncTimer);
+  }
+  syncTimer = window.setTimeout(() => {
+    syncTimer = null;
+    void flushUserStoreSync(false);
+  }, 850);
+}
+
+function save(key: string, value: string | null, shouldSync = true) {
+  setLocalRaw(key, value);
+  notify();
+  if (shouldSync && isBackupKey(key)) {
+    scheduleCloudSync();
+  }
 }
 
 function subscribe(cb: () => void) {
@@ -63,7 +94,7 @@ export function uid(): string {
 }
 
 /**
- * Valor JSON guardado no aparelho. `update` sempre parte do valor mais recente
+ * Valor JSON guardado no aparelho e sincronizado na conta. `update` sempre parte do valor mais recente
  * (vários toques seguidos não se perdem). O retorno só muda quando o conteúdo muda.
  */
 export function useStored<T>(key: string, fallback: T): [T, (fn: (cur: T) => T) => void] {
@@ -126,7 +157,7 @@ export function useMarks(kind: 'ing' | 'step', id: string) {
   return { list, has, toggle, clear };
 }
 
-/* ───────── cópia de segurança ───────── */
+/* ───────── cópia de segurança e banco do usuário na nuvem ───────── */
 
 function allKeys(): string[] {
   const keys = new Set<string>();
@@ -151,12 +182,148 @@ export function exportData(): Backup {
   return buildBackup(entries);
 }
 
+function applyEntriesSilently(entries: Record<string, string>, ownerId: string) {
+  for (const k of allKeys()) {
+    setLocalRaw(k, null);
+  }
+  for (const [k, v] of Object.entries(entries)) {
+    if (isBackupKey(k) && typeof v === 'string') {
+      setLocalRaw(k, v);
+    }
+  }
+  try {
+    localStorage.setItem(OWNER_KEY, ownerId);
+  } catch {
+    /* ignora */
+  }
+  notify();
+}
+
+function bindLifecycleFlush() {
+  if (lifecycleBound || typeof window === 'undefined') return;
+  lifecycleBound = true;
+  const flushSoon = () => {
+    if (dirty && activeSyncUserId) {
+      void flushUserStoreSync(true);
+    }
+  };
+  window.addEventListener('pagehide', flushSoon);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushSoon();
+  });
+}
+
+export async function flushUserStoreSync(useKeepalive = false): Promise<void> {
+  if (typeof window !== 'undefined' && syncTimer !== null) {
+    window.clearTimeout(syncTimer);
+    syncTimer = null;
+  }
+  if (!activeSyncUserId || !dirty) return;
+  dirty = false;
+  const entries = exportData().data;
+  if (useKeepalive) {
+    apiPutKeepalive('/api/user/data', { entries });
+    return;
+  }
+  try {
+    await apiFetch('/api/user/data', {
+      method: 'PUT',
+      body: JSON.stringify({ entries }),
+    });
+  } catch {
+    dirty = true;
+  }
+}
+
+export async function hydrateUserStoreFromServer(userId: string): Promise<void> {
+  if (!userId || typeof window === 'undefined') return;
+  bindLifecycleFlush();
+  if (activeSyncUserId === userId && hydratingUserId === null) return;
+  if (hydratingUserId === userId) return;
+
+  hydratingUserId = userId;
+  try {
+    let prevOwner: string | null = null;
+    try {
+      prevOwner = localStorage.getItem(OWNER_KEY);
+    } catch {
+      /* ignora */
+    }
+    if (prevOwner && prevOwner !== userId) {
+      for (const k of allKeys()) setLocalRaw(k, null);
+      notify();
+    }
+
+    const serverState = await apiFetch<{
+      entries: Record<string, string>;
+      updatedAt: string | null;
+    }>('/api/user/data');
+
+    const serverEntries = serverState.entries ?? {};
+    const serverCount = Object.keys(serverEntries).length;
+    const localEntries = exportData().data;
+    const localCount = Object.keys(localEntries).length;
+
+    if (serverCount > 0) {
+      applyEntriesSilently(serverEntries, userId);
+      dirty = false;
+    } else if (localCount > 0) {
+      try {
+        localStorage.setItem(OWNER_KEY, userId);
+      } catch {
+        /* ignora */
+      }
+      await apiFetch('/api/user/data', {
+        method: 'PUT',
+        body: JSON.stringify({ entries: localEntries }),
+      });
+      dirty = false;
+    } else {
+      try {
+        localStorage.setItem(OWNER_KEY, userId);
+      } catch {
+        /* ignora */
+      }
+    }
+    activeSyncUserId = userId;
+  } catch {
+    activeSyncUserId = userId;
+  } finally {
+    if (hydratingUserId === userId) hydratingUserId = null;
+  }
+}
+
+export function resetLocalStoreOnLogout(): void {
+  if (typeof window !== 'undefined' && syncTimer !== null) {
+    window.clearTimeout(syncTimer);
+    syncTimer = null;
+  }
+  activeSyncUserId = null;
+  hydratingUserId = null;
+  dirty = false;
+  for (const k of allKeys()) setLocalRaw(k, null);
+  try {
+    localStorage.removeItem(OWNER_KEY);
+  } catch {
+    /* ignora */
+  }
+  notify();
+}
+
 /** Substitui TODOS os dados do app pelos do backup já validado. */
 export function importData(data: Record<string, string>) {
-  for (const k of allKeys()) save(k, null);
-  for (const [k, v] of Object.entries(data)) save(k, v);
+  for (const k of allKeys()) setLocalRaw(k, null);
+  for (const [k, v] of Object.entries(data)) {
+    if (isBackupKey(k) && typeof v === 'string') {
+      setLocalRaw(k, v);
+    }
+  }
+  notify();
+  scheduleCloudSync();
 }
 
 export function clearAllData() {
-  for (const k of allKeys()) save(k, null);
+  for (const k of allKeys()) setLocalRaw(k, null);
+  notify();
+  scheduleCloudSync();
 }

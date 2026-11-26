@@ -32,8 +32,11 @@ import {
 import {
   applyCorsPolicy,
   applySecurityHeaders,
+  createBlockExtractorAndProbeMiddleware,
+  createLoginBruteForceGuard,
   createRateLimiter,
   extractSafeOriginParts,
+  requireJsonMutationMiddleware,
 } from './server/security.ts';
 import {
   DATA_DIR,
@@ -45,6 +48,7 @@ import {
   touchDailyMetric,
 } from './server/storage.ts';
 import type { AffiliateProduct, EmailProviderMode, MemberStatus, StoredUser } from './server/types.ts';
+import { ALLOWED_ACTIVITY_TYPES, getUserDb, type UserActivityType } from './server/userDb.ts';
 
 const PORT = Number(process.env.PORT || 3000);
 const isProd = process.env.NODE_ENV === 'production';
@@ -376,12 +380,20 @@ async function processKiwifyEvent(
 async function startServer() {
   loadDb();
   const secret = getSessionSecret(DATA_DIR);
+  const userDb = getUserDb(DATA_DIR, secret);
   const { attachUser, requireAuth, requireAdmin } = createAuthMiddleware(() => loadDb(), secret);
+  const catalogJson = fs.readFileSync(path.resolve(process.cwd(), 'src/data/recipes.json'), 'utf8');
+  const catalogParsed = JSON.parse(catalogJson) as unknown;
 
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
   app.use(applySecurityHeaders);
+  app.use(createBlockExtractorAndProbeMiddleware((ev) => userDb.recordSecurityEvent(ev)));
+
+  app.get('/robots.txt', (_req, res) => {
+    res.type('text/plain').send('User-agent: *\nDisallow: /api/\nDisallow: /uploads/\nDisallow: /\n');
+  });
 
   // Mantém rawBody para validação de assinatura HMAC-SHA1 da Kiwify
   app.use(
@@ -417,7 +429,10 @@ async function startServer() {
       ];
     }),
   );
+  app.use('/api', requireJsonMutationMiddleware);
   app.use('/api', attachUser);
+
+  const loginGuard = createLoginBruteForceGuard((ev) => userDb.recordSecurityEvent(ev));
 
   const authLimiter = createRateLimiter({
     windowMs: 10 * 60_000,
@@ -433,6 +448,21 @@ async function startServer() {
     windowMs: 60_000,
     max: 120,
     message: 'Limite temporário de chamadas de webhook excedido.',
+  });
+  const userSyncLimiter = createRateLimiter({
+    windowMs: 60_000,
+    max: 60,
+    message: 'Muitas sincronizações seguidas. Aguarde alguns segundos.',
+  });
+  const analyticsLimiter = createRateLimiter({
+    windowMs: 60_000,
+    max: 150,
+    message: 'Limite temporário de registros excedido.',
+  });
+  const catalogLimiter = createRateLimiter({
+    windowMs: 10 * 60_000,
+    max: 20,
+    message: 'Limite de carregamento do catálogo excedido. Aguarde alguns instantes.',
   });
 
   app.get('/api/health', (_req, res) => {
@@ -468,9 +498,19 @@ async function startServer() {
       return;
     }
 
+    const lock = loginGuard.checkLocked(req, email);
+    if (lock.locked) {
+      res.setHeader('Retry-After', String(lock.retryAfterSec));
+      res.status(429).json({
+        error: 'Muitas tentativas incorretas para este acesso. Aguarde alguns minutos antes de tentar novamente.',
+      });
+      return;
+    }
+
     const db = loadDb();
     const user = db.users.find((u) => u.email === email);
     if (!user) {
+      loginGuard.recordFailure(req, email);
       res.status(401).json({ error: 'E-mail não encontrado na área de membros.' });
       return;
     }
@@ -502,10 +542,12 @@ async function startServer() {
       return;
     }
     if (!verifyPassword(password, user.passwordHash, user.passwordSalt)) {
+      loginGuard.recordFailure(req, email);
       res.status(401).json({ error: 'E-mail ou senha incorretos.' });
       return;
     }
 
+    loginGuard.clearFailures(req, email);
     const now = new Date().toISOString();
     user.lastLoginAt = now;
     user.loginCount = (user.loginCount ?? 0) + 1;
@@ -513,8 +555,13 @@ async function startServer() {
     db.analytics.totalLogins += 1;
     touchDailyMetric(db, 'logins');
     saveDb(db);
+    userDb.recordUserActivity({
+      userId: user.id,
+      eventType: 'login',
+      userAgent: req.get('user-agent'),
+    });
 
-    const token = signSession(user.id, secret);
+    const token = signSession(user.id, secret, user.passwordHash.slice(0, 12));
     setSessionCookie(req, res, token);
     res.json({ token, user: publicUser(user) });
   });
@@ -562,8 +609,14 @@ async function startServer() {
     db.analytics.totalLogins += 1;
     touchDailyMetric(db, 'logins');
     saveDb(db);
+    userDb.recordUserActivity({
+      userId: user.id,
+      eventType: 'login',
+      targetLabel: 'Primeiro acesso',
+      userAgent: req.get('user-agent'),
+    });
 
-    const token = signSession(user.id, secret);
+    const token = signSession(user.id, secret, user.passwordHash.slice(0, 12));
     setSessionCookie(req, res, token);
     res.json({ token, user: publicUser(user) });
   });
@@ -636,7 +689,9 @@ async function startServer() {
     user.needsPasswordSetup = false;
     user.updatedAt = new Date().toISOString();
     saveDb(db);
-    res.json({ ok: true });
+    const rotatedToken = signSession(user.id, secret, user.passwordHash.slice(0, 12));
+    setSessionCookie(req, res, rotatedToken);
+    res.json({ ok: true, token: rotatedToken });
   });
 
   app.post('/api/auth/affiliate-link', requireAuth, (req: AuthedRequest, res) => {
@@ -727,7 +782,11 @@ async function startServer() {
   app.post('/api/webhooks/kiwify', webhookLimiter, handleKiwifyWebhook);
   app.post('/api/webhooks/kiwify/:token', webhookLimiter, handleKiwifyWebhook);
 
-  // ───────── Dados públicos para membros logados ─────────
+  // ───────── Dados protegidos para membros logados ─────────
+  app.get('/api/catalog', catalogLimiter, requireAuth, (_req, res) => {
+    res.json(catalogParsed);
+  });
+
   app.get('/api/recipe-images', requireAuth, (_req, res) => {
     const db = loadDb();
     const map: Record<string, string> = {};
@@ -742,11 +801,42 @@ async function startServer() {
     res.json({ products: db.affiliateProducts.filter((p) => p.active) });
   });
 
-  app.post('/api/analytics/event', requireAuth, (req, res) => {
-    const type = cleanText(req.body?.type, 40);
-    const id = cleanText(req.body?.id, 120);
-    const db = loadDb();
+  // ───────── Banco de Dados Criptografado do Usuário (Freezer, Planner, Compras, Favoritas) ─────────
+  app.get('/api/user/data', userSyncLimiter, requireAuth, (req: AuthedRequest, res) => {
+    const state = userDb.getUserAppState(req.user!.id);
+    res.json({
+      entries: state.entries,
+      summary: state.summary,
+      version: state.version,
+      updatedAt: state.updatedAt,
+    });
+  });
 
+  app.put('/api/user/data', userSyncLimiter, requireAuth, (req: AuthedRequest, res) => {
+    const saved = userDb.saveUserAppState(req.user!.id, req.body?.entries);
+    if (!saved.ok) {
+      res.status(400).json({ error: saved.error });
+      return;
+    }
+    res.json({
+      ok: true,
+      summary: saved.state.summary,
+      version: saved.state.version,
+      updatedAt: saved.state.updatedAt,
+    });
+  });
+
+  app.post('/api/analytics/event', analyticsLimiter, requireAuth, (req: AuthedRequest, res) => {
+    const type = cleanText(req.body?.type, 40) as UserActivityType;
+    const id = cleanText(req.body?.id, 120);
+    const label = cleanText(req.body?.label, 180);
+
+    if (!ALLOWED_ACTIVITY_TYPES.has(type)) {
+      res.status(400).json({ error: 'Tipo de evento inválido.' });
+      return;
+    }
+
+    const db = loadDb();
     if (type === 'recipe_view' && id) {
       db.analytics.recipeViews[id] = (db.analytics.recipeViews[id] ?? 0) + 1;
       touchDailyMetric(db, 'recipeViews');
@@ -756,11 +846,20 @@ async function startServer() {
       if (prod) prod.clicks = (prod.clicks ?? 0) + 1;
       touchDailyMetric(db, 'productClicks');
       saveDb(db);
-    } else if (type === 'referral_share') {
+    } else if (type === 'referral_share' || type === 'shopping_share') {
       db.analytics.whatsappReferralShares += 1;
       touchDailyMetric(db, 'referralShares');
       saveDb(db);
     }
+
+    userDb.recordUserActivity({
+      userId: req.user!.id,
+      eventType: type,
+      targetId: id,
+      targetLabel: label,
+      userAgent: req.get('user-agent'),
+    });
+
     res.json({ ok: true });
   });
 
@@ -779,6 +878,8 @@ async function startServer() {
       .slice(-14)
       .map(([date, m]) => ({ date, ...m }));
 
+    const detailed = userDb.getDetailedUserAnalytics(db.users);
+
     res.json({
       summary: {
         totalMembers: members.length,
@@ -793,6 +894,7 @@ async function startServer() {
         whatsappReferralShares: db.analytics.whatsappReferralShares,
         customRecipeImages: Object.keys(db.recipeImages).length,
         activeProducts: db.affiliateProducts.filter((p) => p.active).length,
+        ...detailed.summaryAdditions,
       },
       topRecipes,
       products: db.affiliateProducts
@@ -800,7 +902,21 @@ async function startServer() {
         .sort((a, b) => (b.clicks ?? 0) - (a.clicks ?? 0))
         .map((p) => ({ id: p.id, title: p.title, category: p.category, clicks: p.clicks ?? 0, active: p.active })),
       daily,
+      featureAdoption: detailed.featureAdoption,
+      topActions: detailed.topActions,
+      userInsights: detailed.userInsights,
+      securityStats: detailed.securityStats,
     });
+  });
+
+  app.get('/api/admin/analytics/users/:id', requireAdmin, (req, res) => {
+    const db = loadDb();
+    const target = db.users.find((u) => u.id === req.params.id);
+    if (!target) {
+      res.status(404).json({ error: 'Usuário não encontrado.' });
+      return;
+    }
+    res.json(userDb.getSingleUserActivityDetail(target));
   });
 
   app.get('/api/admin/kiwify', requireAdmin, (req, res) => {
@@ -1396,6 +1512,7 @@ async function startServer() {
       return;
     }
     saveDb(db);
+    userDb.deleteUserAppData(String(req.params.id));
     res.json({ ok: true });
   });
 

@@ -12,6 +12,71 @@ import { toast } from '../lib/toast';
 
 type AdminTab = 'analytics' | 'kiwify' | 'images' | 'products';
 
+interface UserInsightItem {
+  id: string;
+  name: string;
+  email: string;
+  role: 'admin' | 'member';
+  status: 'active' | 'pending' | 'suspended' | 'refunded' | 'canceled';
+  loginCount: number;
+  lastLoginAt: string | null;
+  lastActivityAt: string | null;
+  lastDevice: string;
+  engagementLevel: 'Muito ativo' | 'Ativo' | 'Pouco ativo' | 'Nunca acessou';
+  totalEvents: number;
+  recipesViewedCount: number;
+  uniqueRecipesCount: number;
+  favoritesCount: number;
+  freezerItemsCount: number;
+  freezerPortionsCount: number;
+  plannedMealsCount: number;
+  shoppingItemsCount: number;
+  shoppingSharesCount: number;
+  guidesViewedCount: number;
+  productClicksCount: number;
+  cloudUpdatedAt: string | null;
+  topRecipes: Array<{ id: string; count: number }>;
+}
+
+interface SingleUserActivityDetail {
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    role: 'admin' | 'member';
+    status: 'active' | 'pending' | 'suspended' | 'refunded' | 'canceled';
+    loginCount: number;
+    lastLoginAt: string | null;
+    createdAt: string;
+    kiwifyProduct: string;
+  };
+  summary: {
+    favoritesCount: number;
+    freezerItemsCount: number;
+    freezerPortionsCount: number;
+    plannedMealsCount: number;
+    shoppingRecipesCount: number;
+    shoppingManualCount: number;
+    shoppingCheckedCount: number;
+    marksCount: number;
+  };
+  cloudUpdatedAt: string | null;
+  totalEvents: number;
+  lastActivityAt: string | null;
+  lastDevice: string;
+  actionBreakdown: Array<{ type: string; label: string; count: number }>;
+  topRecipes: Array<{ id: string; label: string; count: number }>;
+  recentEvents: Array<{
+    id: number;
+    eventType: string;
+    label: string;
+    targetId: string;
+    targetLabel: string;
+    deviceType: string;
+    createdAt: string;
+  }>;
+}
+
 interface AnalyticsPayload {
   summary: {
     totalMembers: number;
@@ -24,6 +89,14 @@ interface AnalyticsPayload {
     whatsappReferralShares: number;
     customRecipeImages: number;
     activeProducts: number;
+    activeLast7Days?: number;
+    totalTrackedEvents?: number;
+    totalFreezerItems?: number;
+    totalFreezerPortions?: number;
+    totalPlannedMeals?: number;
+    totalFavorites?: number;
+    totalShoppingItems?: number;
+    usersWithCloudData?: number;
   };
   topRecipes: Array<{ id: string; views: number }>;
   products: Array<{ id: string; title: string; category: string; clicks: number; active: boolean }>;
@@ -34,6 +107,31 @@ interface AnalyticsPayload {
     productClicks: number;
     referralShares: number;
   }>;
+  featureAdoption?: Array<{
+    key: string;
+    label: string;
+    usersCount: number;
+    totalUsers: number;
+  }>;
+  topActions?: Array<{
+    type: string;
+    label: string;
+    count: number;
+  }>;
+  userInsights?: UserInsightItem[];
+  securityStats?: {
+    totalBlocked: number;
+    blockedLast24h: number;
+    recentEvents: Array<{
+      id: number;
+      eventType: string;
+      ip: string;
+      path: string;
+      userAgent: string;
+      detail: string;
+      createdAt: string;
+    }>;
+  };
 }
 
 interface KiwifySettings {
@@ -244,10 +342,36 @@ export function Admin() {
   );
 }
 
+function fmtDateTimeBR(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function engagementPillClass(level: UserInsightItem['engagementLevel']): string {
+  if (level === 'Muito ativo' || level === 'Ativo') return 'ok';
+  if (level === 'Pouco ativo') return 'soon';
+  return 'expired';
+}
+
 /* ═════════ ABA 1: ANÁLISES ═════════ */
 function AnalyticsTab() {
   const [data, setData] = useState<AnalyticsPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [userSearch, setUserSearch] = useState('');
+  const [engFilter, setEngFilter] = useState<'all' | UserInsightItem['engagementLevel']>('all');
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [selectedDetail, setSelectedDetail] = useState<SingleUserActivityDetail | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -260,6 +384,31 @@ function AnalyticsTab() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const openUserDetail = async (userId: string) => {
+    setDetailOpen(true);
+    setDetailLoading(true);
+    setSelectedDetail(null);
+    try {
+      const res = await apiFetch<SingleUserActivityDetail>(`/api/admin/analytics/users/${userId}`);
+      setSelectedDetail(res);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Não foi possível carregar os detalhes do usuário.');
+      setDetailOpen(false);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const insights = data?.userInsights ?? [];
+  const filteredInsights = useMemo(() => {
+    const q = userSearch.trim().toLowerCase();
+    return insights.filter((u) => {
+      if (engFilter !== 'all' && u.engagementLevel !== engFilter) return false;
+      if (!q) return true;
+      return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+    });
+  }, [insights, userSearch, engFilter]);
 
   if (loading) {
     return (
@@ -277,11 +426,13 @@ function AnalyticsTab() {
   }
 
   const s = data.summary;
+  const featureAdoption = data.featureAdoption ?? [];
+  const topActions = data.topActions ?? [];
 
   return (
     <div className="stack">
       <div className="sec-head">
-        <h2>Resumo geral</h2>
+        <h2>Resumo geral e engajamento</h2>
         <button type="button" className="btn ghost sm" onClick={load}>
           <Icon name="reset" size={15} /> Atualizar
         </button>
@@ -294,6 +445,11 @@ function AnalyticsTab() {
           <small>{s.totalMembers} cadastrados</small>
         </div>
         <div className="card kpi-card">
+          <span>Ativos nos últimos 7d</span>
+          <strong>{s.activeLast7Days ?? 0}</strong>
+          <small>{s.usersWithCloudData ?? 0} com dados salvos no banco</small>
+        </div>
+        <div className="card kpi-card">
           <span>Pendentes / Inativos</span>
           <strong>{s.pendingMembers + s.inactiveMembers}</strong>
           <small>
@@ -303,7 +459,7 @@ function AnalyticsTab() {
         <div className="card kpi-card">
           <span>Acessos (logins)</span>
           <strong>{s.totalLogins}</strong>
-          <small>entradas na área de membros</small>
+          <small>{s.totalTrackedEvents ?? 0} ações registradas</small>
         </div>
         <div className="card kpi-card">
           <span>Receitas abertas</span>
@@ -311,16 +467,191 @@ function AnalyticsTab() {
           <small>{s.customRecipeImages} fotos personalizadas</small>
         </div>
         <div className="card kpi-card">
-          <span>Cliques em itens</span>
-          <strong>{s.totalProductClicks}</strong>
-          <small>{s.activeProducts} produtos ativos</small>
+          <span>Itens no Freezer</span>
+          <strong>{s.totalFreezerItems ?? 0}</strong>
+          <small>{s.totalFreezerPortions ?? 0} porções salvas</small>
         </div>
         <div className="card kpi-card">
-          <span>Indicações WhatsApp</span>
-          <strong>{s.whatsappReferralShares}</strong>
-          <small>compartilhamentos orgânicos</small>
+          <span>Planner & Favoritas</span>
+          <strong>{s.totalPlannedMeals ?? 0}</strong>
+          <small>
+            refeições · {s.totalFavorites ?? 0} favoritas
+          </small>
+        </div>
+        <div className="card kpi-card">
+          <span>Lista de compras & Itens</span>
+          <strong>{s.totalShoppingItems ?? 0}</strong>
+          <small>
+            {s.whatsappReferralShares} compart. · {s.totalProductClicks} cliques
+          </small>
         </div>
       </div>
+
+      <div className="admin-two">
+        <section className="card pad-card">
+          <h2>O que os usuários mais usam no app</h2>
+          {featureAdoption.length === 0 ? (
+            <p className="small">Sem dados de uso por funcionalidade ainda.</p>
+          ) : (
+            <ul className="adopt-list">
+              {featureAdoption.map((feat) => {
+                const pct = feat.totalUsers > 0 ? Math.round((feat.usersCount / feat.totalUsers) * 100) : 0;
+                return (
+                  <li key={feat.key} className="adopt-row">
+                    <div className="adopt-head">
+                      <b>{feat.label}</b>
+                      <span>
+                        {feat.usersCount}/{feat.totalUsers} usuários ({pct}%)
+                      </span>
+                    </div>
+                    <div className="adopt-bar" aria-hidden="true">
+                      <div className="adopt-fill" style={{ width: `${pct}%` }} />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+
+        <section className="card pad-card">
+          <h2>Ações registradas no aplicativo</h2>
+          {topActions.length === 0 ? (
+            <p className="small">Nenhuma ação detalhada registrada ainda.</p>
+          ) : (
+            <ul className="dash-list">
+              {topActions.map((act) => (
+                <li key={act.type}>
+                  <div>
+                    <b>{act.label}</b>
+                  </div>
+                  <span className="pill ok">{act.count}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+
+      <section className="card pad-card stack">
+        <div className="dash-head">
+          <div>
+            <h2>Comportamento detalhado por usuário ({insights.length})</h2>
+            <p className="small">
+              Acompanhe receitas vistas, freezer, planner, lista de compras e últimas ações de cada membro.
+            </p>
+          </div>
+        </div>
+
+        <div className="user-filter-bar">
+          <div className="field" style={{ flex: '1 1 240px', maxWidth: 360 }}>
+            <label htmlFor="user-insight-search" className="sr">
+              Buscar usuário
+            </label>
+            <input
+              id="user-insight-search"
+              type="text"
+              value={userSearch}
+              onChange={(e) => setUserSearch(e.target.value)}
+              placeholder="Buscar por nome ou e-mail…"
+            />
+          </div>
+          <div className="chips filters" style={{ margin: 0 }}>
+            {(
+              [
+                ['all', `Todos (${insights.length})`],
+                ['Muito ativo', 'Muito ativo'],
+                ['Ativo', 'Ativo'],
+                ['Pouco ativo', 'Pouco ativo'],
+                ['Nunca acessou', 'Nunca acessou'],
+              ] as const
+            ).map(([val, label]) => (
+              <button
+                key={val}
+                type="button"
+                className={`chip ${engFilter === val ? 'on' : ''}`}
+                onClick={() => setEngFilter(val)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {filteredInsights.length === 0 ? (
+          <p className="small">Nenhum usuário encontrado para este filtro.</p>
+        ) : (
+          <div className="table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Usuário</th>
+                  <th>Engajamento</th>
+                  <th>Logins & Receitas</th>
+                  <th>Dados salvos no app</th>
+                  <th>Última atividade</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredInsights.map((u) => (
+                  <tr key={u.id}>
+                    <td>
+                      <b>{u.name}</b>
+                      <div className="small">{u.email}</div>
+                      <div className="user-meta-pills">
+                        <span className={`pill ${u.status === 'active' ? 'ok' : u.status === 'pending' ? 'soon' : 'expired'}`}>
+                          {STATUS_LABEL[u.status] ?? u.status}
+                        </span>
+                        {u.lastDevice !== '—' && <span className="pill soon">{u.lastDevice}</span>}
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`pill ${engagementPillClass(u.engagementLevel)}`}>
+                        {u.engagementLevel}
+                      </span>
+                      <div className="small" style={{ marginTop: 4 }}>
+                        {u.totalEvents} evento(s)
+                      </div>
+                    </td>
+                    <td>
+                      <b>{u.loginCount} acesso(s)</b>
+                      <div className="small">
+                        {u.recipesViewedCount} receitas ({u.uniqueRecipesCount} únicas)
+                      </div>
+                      {(u.guidesViewedCount > 0 || u.productClicksCount > 0) && (
+                        <div className="small">
+                          {u.guidesViewedCount} guias · {u.productClicksCount} cliques itens
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <div className="small">
+                        <b>{u.favoritesCount}</b> favoritas · <b>{u.freezerItemsCount}</b> freezer ({u.freezerPortionsCount} porções)
+                      </div>
+                      <div className="small">
+                        <b>{u.plannedMealsCount}</b> no planner · <b>{u.shoppingItemsCount}</b> na lista ({u.shoppingSharesCount} compart.)
+                      </div>
+                    </td>
+                    <td>
+                      <div className="small">{fmtDateTimeBR(u.lastActivityAt)}</div>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn ghost sm"
+                        onClick={() => void openUserDetail(u.id)}
+                      >
+                        <Icon name="eye" size={14} /> Detalhes
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       <div className="admin-two">
         <section className="card pad-card">
@@ -382,7 +713,7 @@ function AnalyticsTab() {
                   <th>Logins</th>
                   <th>Receitas</th>
                   <th>Cliques itens</th>
-                  <th>Indicações WA</th>
+                  <th>Compartilhamentos</th>
                 </tr>
               </thead>
               <tbody>
@@ -400,6 +731,186 @@ function AnalyticsTab() {
           </div>
         )}
       </section>
+
+      <section className="card pad-card stack">
+        <div className="dash-head">
+          <div>
+            <h2>Proteção ativa e bloqueios de segurança</h2>
+            <p className="small">
+              Registro automático de tentativas de varredura, extratores de site, acessos a arquivos restritos e bloqueios de login.
+            </p>
+          </div>
+          <div className="user-meta-pills">
+            <span className="pill ok">Últimas 24h: {data.securityStats?.blockedLast24h ?? 0} bloqueio(s)</span>
+            <span className="pill soon">Total registrado: {data.securityStats?.totalBlocked ?? 0}</span>
+          </div>
+        </div>
+
+        {(data.securityStats?.recentEvents?.length ?? 0) === 0 ? (
+          <p className="small">Nenhuma tentativa suspeita bloqueada até o momento.</p>
+        ) : (
+          <div className="table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Quando</th>
+                  <th>Tipo</th>
+                  <th>Caminho</th>
+                  <th>IP</th>
+                  <th>Detalhe</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.securityStats!.recentEvents.map((ev) => {
+                  const typeLabel =
+                    ev.eventType === 'probe_path'
+                      ? 'Rota restrita'
+                      : ev.eventType === 'extractor_ua'
+                        ? 'Extrator / robô'
+                        : ev.eventType === 'brute_force'
+                          ? 'Tentativas de senha'
+                          : 'Requisição bloqueada';
+                  return (
+                    <tr key={ev.id}>
+                      <td className="small">{fmtDateTimeBR(ev.createdAt)}</td>
+                      <td>
+                        <span className="pill expired">{typeLabel}</span>
+                      </td>
+                      <td className="small">{ev.path || '—'}</td>
+                      <td className="small">{ev.ip || '—'}</td>
+                      <td className="small">{ev.detail || ev.userAgent || '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <Sheet
+        open={detailOpen}
+        wide
+        onClose={() => setDetailOpen(false)}
+        title={selectedDetail ? `Atividade de ${selectedDetail.user.name}` : 'Detalhes do usuário'}
+      >
+        {detailLoading ? (
+          <p className="small">Carregando histórico e dados salvos do usuário…</p>
+        ) : !selectedDetail ? (
+          <p className="small">Nenhum detalhe disponível.</p>
+        ) : (
+          <div className="stack">
+            <div className="callout ok">
+              <Icon name="user" size={18} />
+              <div>
+                <b>
+                  {selectedDetail.user.name} · {selectedDetail.user.email}
+                </b>
+                <p>
+                  Status: <b>{STATUS_LABEL[selectedDetail.user.status] ?? selectedDetail.user.status}</b> · Logins:{' '}
+                  <b>{selectedDetail.user.loginCount}</b> · Aparelho recente: <b>{selectedDetail.lastDevice}</b> · Última atividade:{' '}
+                  <b>{fmtDateTimeBR(selectedDetail.lastActivityAt)}</b>
+                </p>
+              </div>
+            </div>
+
+            <div className="kpi-grid">
+              <div className="card kpi-card">
+                <span>Favoritas</span>
+                <strong>{selectedDetail.summary.favoritesCount}</strong>
+              </div>
+              <div className="card kpi-card">
+                <span>Meu Freezer</span>
+                <strong>{selectedDetail.summary.freezerItemsCount}</strong>
+                <small>{selectedDetail.summary.freezerPortionsCount} porções</small>
+              </div>
+              <div className="card kpi-card">
+                <span>Planner</span>
+                <strong>{selectedDetail.summary.plannedMealsCount}</strong>
+                <small>refeições planejadas</small>
+              </div>
+              <div className="card kpi-card">
+                <span>Lista de compras</span>
+                <strong>{selectedDetail.summary.shoppingRecipesCount + selectedDetail.summary.shoppingManualCount}</strong>
+                <small>{selectedDetail.summary.shoppingCheckedCount} comprados</small>
+              </div>
+            </div>
+
+            {selectedDetail.cloudUpdatedAt && (
+              <p className="small">
+                Último salvamento automático no banco criptografado: <b>{fmtDateTimeBR(selectedDetail.cloudUpdatedAt)}</b> ·{' '}
+                {selectedDetail.summary.marksCount} receita(s) com checklist marcado.
+              </p>
+            )}
+
+            {selectedDetail.actionBreakdown.length > 0 && (
+              <div>
+                <h3 style={{ marginBottom: 8 }}>Resumo de ações</h3>
+                <div className="user-meta-pills">
+                  {selectedDetail.actionBreakdown.map((a) => (
+                    <span key={a.type} className="pill ok">
+                      {a.label}: {a.count}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selectedDetail.topRecipes.length > 0 && (
+              <div>
+                <h3 style={{ marginBottom: 6 }}>Receitas mais abertas por este usuário</h3>
+                <ul className="dash-list">
+                  {selectedDetail.topRecipes.map((tr) => {
+                    const rec = getRecipe(tr.id);
+                    return (
+                      <li key={tr.id}>
+                        <div>
+                          <Link to={`/receita/${tr.id}`} className="dash-recipe" onClick={() => setDetailOpen(false)}>
+                            {rec ? rec.title : tr.label || tr.id}
+                          </Link>
+                        </div>
+                        <span className="pill ok">{tr.count}×</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+
+            <div>
+              <h3 style={{ marginBottom: 6 }}>Histórico recente no aplicativo ({selectedDetail.recentEvents.length})</h3>
+              {selectedDetail.recentEvents.length === 0 ? (
+                <p className="small">Este usuário ainda não tem ações registradas.</p>
+              ) : (
+                <div className="table-wrap">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Quando</th>
+                        <th>Ação</th>
+                        <th>Detalhe</th>
+                        <th>Aparelho</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedDetail.recentEvents.map((ev) => (
+                        <tr key={ev.id}>
+                          <td className="small">{fmtDateTimeBR(ev.createdAt)}</td>
+                          <td>
+                            <b>{ev.label}</b>
+                          </td>
+                          <td className="small">{ev.targetLabel || ev.targetId || '—'}</td>
+                          <td className="small">{ev.deviceType}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Sheet>
     </div>
   );
 }

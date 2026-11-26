@@ -58,8 +58,9 @@ export function Backup() {
       <header className="page-head">
         <h1>Backup dos dados</h1>
         <p>
-          Seus dados (freezer, planner, lista de compras, favoritas) ficam só neste aparelho, no navegador.
-          Salve uma cópia de vez em quando e use-a para trocar de celular ou se limpar os dados do navegador.
+          Seus dados (freezer, planner, lista de compras, favoritas) já ficam salvos automaticamente no seu
+          banco de dados protegido do CongelaFit. Você também pode baixar uma cópia extra para guardar fora
+          da nuvem.
         </p>
       </header>
 
@@ -112,7 +113,8 @@ export function Backup() {
       </section>
 
       <p className="small foot-note">
-        Os dados não são enviados a nenhum servidor. Limpar os dados do navegador apaga o que está salvo aqui.
+        Seus registros ficam protegidos e criptografados na sua conta CongelaFit e sincronizam ao entrar em
+        outro celular, tablet ou computador.
       </p>
 
       <ConfirmSheet

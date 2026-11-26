@@ -142,10 +142,15 @@ export function loadDb(): Database {
 
 export function saveDb(db: Database): void {
   dbCache = db;
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
   const tmp = `${DB_FILE}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(db, null, 2), 'utf8');
+  fs.writeFileSync(tmp, JSON.stringify(db, null, 2), { encoding: 'utf8', mode: 0o600 });
   fs.renameSync(tmp, DB_FILE);
+  try {
+    fs.chmodSync(DB_FILE, 0o600);
+  } catch {
+    /* ignora */
+  }
 }
 
 export function touchDailyMetric(db: Database, field: keyof DailyMetric): void {

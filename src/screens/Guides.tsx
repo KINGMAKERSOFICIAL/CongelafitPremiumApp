@@ -1,7 +1,9 @@
+import { useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Icon } from '../components/Icon';
 import { CATEGORIES, SECTIONS } from '../data';
 import { GUIDES, getGuide, type Block } from '../data/guides';
+import { trackEvent } from '../lib/api';
 import { freezeRuleForCat, type Verdict } from '../lib/freezer';
 import { NotFound } from './NotFound';
 
@@ -130,6 +132,9 @@ export function Guides() {
 export function Guide() {
   const { id } = useParams();
   const g = getGuide(id);
+  useEffect(() => {
+    if (g) trackEvent('guide_view', g.id, g.title);
+  }, [g]);
   if (!g) return <NotFound />;
   const i = GUIDES.findIndex((x) => x.id === g.id);
   const next = GUIDES[(i + 1) % GUIDES.length];
