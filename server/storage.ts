@@ -127,7 +127,11 @@ export function loadDb(): Database {
       dbCache = merged;
       return merged;
     } catch {
-      /* recria abaixo */
+      try {
+        fs.copyFileSync(DB_FILE, `${DB_FILE}.corrupt-${Date.now()}.bak`);
+      } catch {
+        /* ignora falha de backup */
+      }
     }
   }
   const initial = defaultDatabase();

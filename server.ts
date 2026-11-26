@@ -848,91 +848,101 @@ async function startServer() {
 
   app.put('/api/admin/kiwify', requireAdmin, (req, res) => {
     const db = loadDb();
-    const officialSiteUrl = cleanText(req.body?.officialSiteUrl, 300).replace(/\/+$/, '');
-    const appBaseUrl = cleanText(req.body?.appBaseUrl, 300).replace(/\/+$/, '');
-    const token = cleanText(req.body?.kiwifyWebhookToken, 120);
-    const checkoutUrl = cleanText(req.body?.kiwifyCheckoutUrl, 500);
-    const affiliateInviteUrl = cleanText(req.body?.kiwifyAffiliateInviteUrl, 500);
+    const rawSection = typeof req.body?.section === 'string' ? req.body.section : 'all';
+    const section: 'webhook' | 'api' | 'email' | 'all' =
+      rawSection === 'webhook' || rawSection === 'api' || rawSection === 'email' ? rawSection : 'all';
 
-    if (officialSiteUrl && !isValidHttpUrl(officialSiteUrl)) {
-      res.status(400).json({ error: 'Domínio oficial inválido (use https://...).' });
-      return;
-    }
-    if (appBaseUrl && !isValidHttpUrl(appBaseUrl)) {
-      res.status(400).json({ error: 'URL de hospedagem do app inválida (use https://...).' });
-      return;
-    }
-    if (token.length < 6) {
-      res.status(400).json({ error: 'O token do webhook precisa ter pelo menos 6 caracteres.' });
-      return;
-    }
-    if (checkoutUrl && !isValidHttpUrl(checkoutUrl)) {
-      res.status(400).json({ error: 'Link de checkout/site do CongelaFit inválido.' });
-      return;
-    }
-    if (affiliateInviteUrl && !isValidHttpUrl(affiliateInviteUrl)) {
-      res.status(400).json({ error: 'Link de afiliação da Kiwify inválido.' });
-      return;
-    }
+    if (section === 'webhook' || section === 'all') {
+      const officialSiteUrl = cleanText(req.body?.officialSiteUrl, 300).replace(/\/+$/, '');
+      const appBaseUrl = cleanText(req.body?.appBaseUrl, 300).replace(/\/+$/, '');
+      const token = cleanText(req.body?.kiwifyWebhookToken, 120);
+      const checkoutUrl = cleanText(req.body?.kiwifyCheckoutUrl, 500);
+      const affiliateInviteUrl = cleanText(req.body?.kiwifyAffiliateInviteUrl, 500);
 
-    if (officialSiteUrl) db.settings.officialSiteUrl = officialSiteUrl;
-    db.settings.appBaseUrl = appBaseUrl;
-    db.settings.kiwifyWebhookToken = token;
-    db.settings.kiwifyCheckoutUrl = checkoutUrl;
-    db.settings.kiwifyAffiliateInviteUrl = affiliateInviteUrl;
-
-    // Credenciais opcionais da API Pública da Kiwify
-    if (typeof req.body?.kiwifyClientId === 'string') {
-      db.settings.kiwifyClientId = cleanText(req.body.kiwifyClientId, 160);
-    }
-    if (typeof req.body?.kiwifyAccountId === 'string') {
-      db.settings.kiwifyAccountId = cleanText(req.body.kiwifyAccountId, 160);
-    }
-    if (typeof req.body?.kiwifyProductId === 'string') {
-      db.settings.kiwifyProductId = cleanText(req.body.kiwifyProductId, 160);
-    }
-    if (typeof req.body?.kiwifyClientSecret === 'string' && req.body.kiwifyClientSecret.trim()) {
-      db.settings.kiwifyClientSecretEnc = encryptSecret(req.body.kiwifyClientSecret, secret);
-    } else if (req.body?.clearKiwifyClientSecret === true) {
-      db.settings.kiwifyClientSecretEnc = '';
-    }
-
-    // Configurações de envio de e-mail (SMTP / Resend)
-    if (
-      typeof req.body?.emailProvider === 'string' &&
-      ['auto', 'smtp', 'resend', 'outbox'].includes(req.body.emailProvider)
-    ) {
-      db.settings.emailProvider = req.body.emailProvider as EmailProviderMode;
-    }
-    if (typeof req.body?.smtpHost === 'string') db.settings.smtpHost = cleanText(req.body.smtpHost, 200);
-    if (req.body?.smtpPort !== undefined) {
-      const port = Number(req.body.smtpPort);
-      if (!Number.isFinite(port) || port < 1 || port > 65535) {
-        res.status(400).json({ error: 'Porta SMTP inválida.' });
+      if (officialSiteUrl && !isValidHttpUrl(officialSiteUrl)) {
+        res.status(400).json({ error: 'Domínio oficial inválido (use https://...).' });
         return;
       }
-      db.settings.smtpPort = Math.round(port);
+      if (appBaseUrl && !isValidHttpUrl(appBaseUrl)) {
+        res.status(400).json({ error: 'URL de hospedagem do app inválida (use https://...).' });
+        return;
+      }
+      if (token.length < 6) {
+        res.status(400).json({ error: 'O token do webhook precisa ter pelo menos 6 caracteres.' });
+        return;
+      }
+      if (checkoutUrl && !isValidHttpUrl(checkoutUrl)) {
+        res.status(400).json({ error: 'Link de checkout/site do CongelaFit inválido.' });
+        return;
+      }
+      if (affiliateInviteUrl && !isValidHttpUrl(affiliateInviteUrl)) {
+        res.status(400).json({ error: 'Link de afiliação da Kiwify inválido.' });
+        return;
+      }
+
+      if (officialSiteUrl) db.settings.officialSiteUrl = officialSiteUrl;
+      db.settings.appBaseUrl = appBaseUrl;
+      db.settings.kiwifyWebhookToken = token;
+      db.settings.kiwifyCheckoutUrl = checkoutUrl;
+      db.settings.kiwifyAffiliateInviteUrl = affiliateInviteUrl;
     }
-    if (typeof req.body?.smtpSecure === 'boolean') db.settings.smtpSecure = req.body.smtpSecure;
-    if (typeof req.body?.smtpUser === 'string') db.settings.smtpUser = cleanText(req.body.smtpUser, 200);
-    if (typeof req.body?.smtpPass === 'string' && req.body.smtpPass.trim()) {
-      db.settings.smtpPassEnc = encryptSecret(req.body.smtpPass, secret);
-    } else if (req.body?.clearSmtpPass === true) {
-      db.settings.smtpPassEnc = '';
+
+    if (section === 'api' || section === 'all') {
+      // Credenciais opcionais da API Pública da Kiwify
+      if (typeof req.body?.kiwifyClientId === 'string') {
+        db.settings.kiwifyClientId = cleanText(req.body.kiwifyClientId, 160);
+      }
+      if (typeof req.body?.kiwifyAccountId === 'string') {
+        db.settings.kiwifyAccountId = cleanText(req.body.kiwifyAccountId, 160);
+      }
+      if (typeof req.body?.kiwifyProductId === 'string') {
+        db.settings.kiwifyProductId = cleanText(req.body.kiwifyProductId, 160);
+      }
+      if (typeof req.body?.kiwifyClientSecret === 'string' && req.body.kiwifyClientSecret.trim()) {
+        db.settings.kiwifyClientSecretEnc = encryptSecret(req.body.kiwifyClientSecret, secret);
+      } else if (req.body?.clearKiwifyClientSecret === true) {
+        db.settings.kiwifyClientSecretEnc = '';
+      }
     }
-    if (typeof req.body?.resendApiKey === 'string' && req.body.resendApiKey.trim()) {
-      db.settings.resendApiKeyEnc = encryptSecret(req.body.resendApiKey, secret);
-    } else if (req.body?.clearResendApiKey === true) {
-      db.settings.resendApiKeyEnc = '';
-    }
-    if (typeof req.body?.emailFromName === 'string') {
-      db.settings.emailFromName = cleanText(req.body.emailFromName, 120) || 'CongelaFit Premium';
-    }
-    if (typeof req.body?.emailFromAddress === 'string') {
-      db.settings.emailFromAddress = cleanText(req.body.emailFromAddress, 200);
-    }
-    if (typeof req.body?.sendSuspensionEmail === 'boolean') {
-      db.settings.sendSuspensionEmail = req.body.sendSuspensionEmail;
+
+    if (section === 'email' || section === 'all') {
+      // Configurações de envio de e-mail (SMTP / Resend)
+      if (
+        typeof req.body?.emailProvider === 'string' &&
+        ['auto', 'smtp', 'resend', 'outbox'].includes(req.body.emailProvider)
+      ) {
+        db.settings.emailProvider = req.body.emailProvider as EmailProviderMode;
+      }
+      if (typeof req.body?.smtpHost === 'string') db.settings.smtpHost = cleanText(req.body.smtpHost, 200);
+      if (req.body?.smtpPort !== undefined) {
+        const port = Number(req.body.smtpPort);
+        if (!Number.isFinite(port) || port < 1 || port > 65535) {
+          res.status(400).json({ error: 'Porta SMTP inválida.' });
+          return;
+        }
+        db.settings.smtpPort = Math.round(port);
+      }
+      if (typeof req.body?.smtpSecure === 'boolean') db.settings.smtpSecure = req.body.smtpSecure;
+      if (typeof req.body?.smtpUser === 'string') db.settings.smtpUser = cleanText(req.body.smtpUser, 200);
+      if (typeof req.body?.smtpPass === 'string' && req.body.smtpPass.trim()) {
+        db.settings.smtpPassEnc = encryptSecret(req.body.smtpPass, secret);
+      } else if (req.body?.clearSmtpPass === true) {
+        db.settings.smtpPassEnc = '';
+      }
+      if (typeof req.body?.resendApiKey === 'string' && req.body.resendApiKey.trim()) {
+        db.settings.resendApiKeyEnc = encryptSecret(req.body.resendApiKey, secret);
+      } else if (req.body?.clearResendApiKey === true) {
+        db.settings.resendApiKeyEnc = '';
+      }
+      if (typeof req.body?.emailFromName === 'string') {
+        db.settings.emailFromName = cleanText(req.body.emailFromName, 120) || 'CongelaFit Premium';
+      }
+      if (typeof req.body?.emailFromAddress === 'string') {
+        db.settings.emailFromAddress = cleanText(req.body.emailFromAddress, 200);
+      }
+      if (typeof req.body?.sendSuspensionEmail === 'boolean') {
+        db.settings.sendSuspensionEmail = req.body.sendSuspensionEmail;
+      }
     }
 
     db.settings.updatedAt = new Date().toISOString();

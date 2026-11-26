@@ -456,6 +456,7 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
   const [webhookErr, setWebhookErr] = useState('');
   const [apiErr, setApiErr] = useState('');
   const [emailErr, setEmailErr] = useState('');
+  const [emailServerUnlocked, setEmailServerUnlocked] = useState(false);
 
   // Simular webhook
   const [testEmail, setTestEmail] = useState('');
@@ -571,25 +572,6 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
     setEmailLogs(kiwify.emailLogs ?? []);
   };
 
-  const buildBasePayload = (cur: KiwifySettings) => ({
-    officialSiteUrl: (cur.officialSiteUrl || 'https://www.congelafit.com.br').trim().replace(/\/+$/, ''),
-    appBaseUrl: (cur.appBaseUrl || '').trim().replace(/\/+$/, ''),
-    kiwifyWebhookToken: cur.kiwifyWebhookToken.trim(),
-    kiwifyCheckoutUrl: cur.kiwifyCheckoutUrl.trim(),
-    kiwifyAffiliateInviteUrl: cur.kiwifyAffiliateInviteUrl.trim(),
-    kiwifyClientId: (cur.kiwifyClientId ?? '').trim(),
-    kiwifyAccountId: (cur.kiwifyAccountId ?? '').trim(),
-    kiwifyProductId: (cur.kiwifyProductId ?? '').trim(),
-    emailProvider: cur.emailProvider ?? 'auto',
-    smtpHost: (cur.smtpHost ?? '').trim(),
-    smtpPort: Number(cur.smtpPort) || 587,
-    smtpSecure: Boolean(cur.smtpSecure),
-    smtpUser: (cur.smtpUser ?? '').trim(),
-    emailFromName: (cur.emailFromName ?? 'CongelaFit Premium').trim() || 'CongelaFit Premium',
-    emailFromAddress: (cur.emailFromAddress ?? '').trim(),
-    sendSuspensionEmail: cur.sendSuspensionEmail !== false,
-  });
-
   const saveWebhookSettings = async (e: FormEvent) => {
     e.preventDefault();
     if (!settings) return;
@@ -599,7 +581,7 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
       await apiFetch('/api/admin/kiwify', {
         method: 'PUT',
         body: JSON.stringify({
-          ...buildBasePayload(settings),
+          section: 'webhook',
           officialSiteUrl: officialSiteUrl.trim().replace(/\/+$/, ''),
           appBaseUrl: appBaseUrl.trim().replace(/\/+$/, ''),
           kiwifyWebhookToken: token.trim(),
@@ -626,7 +608,7 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
       await apiFetch('/api/admin/kiwify', {
         method: 'PUT',
         body: JSON.stringify({
-          ...buildBasePayload(settings),
+          section: 'api',
           kiwifyClientId: kiwifyClientId.trim(),
           kiwifyClientSecret: kiwifyClientSecret.trim() || undefined,
           kiwifyAccountId: kiwifyAccountId.trim(),
@@ -652,7 +634,7 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
       await apiFetch('/api/admin/kiwify', {
         method: 'PUT',
         body: JSON.stringify({
-          ...buildBasePayload(settings),
+          section: 'email',
           emailProvider,
           smtpHost: smtpHost.trim(),
           smtpPort: Number(smtpPort) || 587,
@@ -667,8 +649,9 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
       });
       setSmtpPass('');
       setResendApiKey('');
+      setEmailServerUnlocked(false);
       await refreshSettingsMeta();
-      toast('Configurações de envio de e-mail salvas!');
+      toast('Configurações de envio de e-mail salvas e protegidas!');
     } catch (e2) {
       setEmailErr(e2 instanceof Error ? e2.message : 'Erro ao salvar configurações de e-mail.');
     } finally {
@@ -1252,162 +1235,214 @@ function KiwifyTab({ onConfigChanged }: { onConfigChanged: () => Promise<void> }
         </form>
 
         {/* BLOCO 3: ENVIO AUTOMÁTICO DE E-MAIL AOS ALUNOS */}
-        <form className="card pad-card stack" onSubmit={saveEmailSettings}>
-          <div className="dash-head">
-            <h2>3. Envio Automático de E-mail (Login e Senha ao Aluno)</h2>
-            <span className={`pill ${settings.activeEmailProvider === 'outbox' ? 'soon' : 'ok'}`}>
-              {settings.activeEmailProvider === 'smtp'
-                ? 'SMTP ativo'
-                : settings.activeEmailProvider === 'resend'
-                  ? 'Resend ativo'
-                  : 'Modo teste (Caixa de saída)'}
-            </span>
-          </div>
-          <p className="small">
-            Configure o servidor de e-mail para que cada aluno receba automaticamente na caixa de entrada seu{' '}
-            <b>e-mail</b> e <b>senha gerada</b> assim que o pagamento for confirmado.
-          </p>
+        {(() => {
+          const emailServerSaved =
+            settings.activeEmailProvider !== 'outbox' ||
+            Boolean(settings.smtpHost || settings.hasSmtpPass || settings.hasResendKey || settings.emailFromAddress);
+          const emailLocked = emailServerSaved && !emailServerUnlocked;
+          return (
+            <form className="card pad-card stack" onSubmit={saveEmailSettings}>
+              <div className="dash-head">
+                <h2>3. Envio Automático de E-mail (Login e Senha ao Aluno)</h2>
+                <span className={`pill ${settings.activeEmailProvider === 'outbox' ? 'soon' : 'ok'}`}>
+                  {settings.activeEmailProvider === 'smtp'
+                    ? 'SMTP ativo'
+                    : settings.activeEmailProvider === 'resend'
+                      ? 'Resend ativo'
+                      : 'Modo teste (Caixa de saída)'}
+                </span>
+              </div>
+              <p className="small">
+                Configure o servidor de e-mail para que cada aluno receba automaticamente na caixa de entrada seu{' '}
+                <b>e-mail</b> e <b>senha gerada</b> assim que o pagamento for confirmado.
+              </p>
 
-          <div className="field-grid">
-            <div className="field">
-              <label htmlFor="mail-prov">Provedor de disparo</label>
-              <select
-                id="mail-prov"
-                value={emailProvider}
-                onChange={(e) => setEmailProvider(e.target.value as 'auto' | 'smtp' | 'resend' | 'outbox')}
-              >
-                <option value="auto">Automático (usa Resend ou SMTP se configurados)</option>
-                <option value="smtp">SMTP (Gmail, Brevo, Hostinger, Zoho)</option>
-                <option value="resend">Resend API (recomendado para produção)</option>
-                <option value="outbox">Apenas caixa de saída local (teste)</option>
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="mail-from-name">Nome do remetente</label>
-              <input
-                id="mail-from-name"
-                type="text"
-                value={emailFromName}
-                onChange={(e) => setEmailFromName(e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="mail-from-addr">E-mail remetente (From)</label>
-              <input
-                id="mail-from-addr"
-                type="email"
-                placeholder="acesso@congelafit.com.br ou seu@gmail.com"
-                value={emailFromAddress}
-                onChange={(e) => setEmailFromAddress(e.target.value)}
-              />
-            </div>
-          </div>
+              {emailLocked && (
+                <div className="callout ok" role="status">
+                  <Icon name="lock" size={18} />
+                  <div style={{ flex: 1 }}>
+                    <b>Servidor de e-mail salvo e protegido</b>
+                    <p>
+                      As configurações já salvas permanecem preservadas e bloqueadas contra alterações acidentais.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    onClick={() => setEmailServerUnlocked(true)}
+                  >
+                    <Icon name="edit" size={15} /> Alterar servidor
+                  </button>
+                </div>
+              )}
 
-          <div className="field-grid">
-            <div className="field">
-              <label htmlFor="smtp-host">Servidor SMTP (Host)</label>
-              <input
-                id="smtp-host"
-                type="text"
-                placeholder="Ex: smtp.gmail.com ou smtp-relay.brevo.com"
-                value={smtpHost}
-                onChange={(e) => setSmtpHost(e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="smtp-port">Porta SMTP</label>
-              <input
-                id="smtp-port"
-                type="number"
-                placeholder="587"
-                value={smtpPort}
-                onChange={(e) => setSmtpPort(e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="smtp-user">Usuário SMTP</label>
-              <input
-                id="smtp-user"
-                type="text"
-                placeholder="seuemail@gmail.com"
-                value={smtpUser}
-                onChange={(e) => setSmtpUser(e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="smtp-pass">
-                Senha SMTP / App Password {settings.hasSmtpPass && <small>(já salva — vazio mantém)</small>}
-              </label>
-              <PasswordInput
-                id="smtp-pass"
-                placeholder={settings.hasSmtpPass ? '••••••••••••' : 'Senha de aplicativo SMTP'}
-                value={smtpPass}
-                onChange={(e) => setSmtpPass(e.target.value)}
-              />
-            </div>
-          </div>
+              <fieldset className="stack" disabled={emailLocked} style={{ border: 0, margin: 0, padding: 0 }}>
+                <div className="field-grid">
+                  <div className="field">
+                    <label htmlFor="mail-prov">Provedor de disparo</label>
+                    <select
+                      id="mail-prov"
+                      value={emailProvider}
+                      onChange={(e) => setEmailProvider(e.target.value as 'auto' | 'smtp' | 'resend' | 'outbox')}
+                    >
+                      <option value="auto">Automático (usa Resend ou SMTP se configurados)</option>
+                      <option value="smtp">SMTP (Gmail, Brevo, Hostinger, Zoho)</option>
+                      <option value="resend">Resend API (recomendado para produção)</option>
+                      <option value="outbox">Apenas caixa de saída local (teste)</option>
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="mail-from-name">Nome do remetente</label>
+                    <input
+                      id="mail-from-name"
+                      type="text"
+                      value={emailFromName}
+                      onChange={(e) => setEmailFromName(e.target.value)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="mail-from-addr">E-mail remetente (From)</label>
+                    <input
+                      id="mail-from-addr"
+                      type="email"
+                      placeholder="acesso@congelafit.com.br ou seu@gmail.com"
+                      value={emailFromAddress}
+                      onChange={(e) => setEmailFromAddress(e.target.value)}
+                    />
+                  </div>
+                </div>
 
-          <div className="field-grid">
-            <div className="field">
-              <label htmlFor="resend-key">
-                Resend API Key (alternativa ao SMTP){' '}
-                {settings.hasResendKey && <small>(já salva — vazio mantém)</small>}
-              </label>
-              <PasswordInput
-                id="resend-key"
-                placeholder={settings.hasResendKey ? '••••••••••••' : 're_xxxxxxxx...'}
-                value={resendApiKey}
-                onChange={(e) => setResendApiKey(e.target.value)}
-              />
-            </div>
-            <div className="field" style={{ justifyContent: 'flex-end' }}>
-              <label className="check-inline">
+                <div className="field-grid">
+                  <div className="field">
+                    <label htmlFor="smtp-host">Servidor SMTP (Host)</label>
+                    <input
+                      id="smtp-host"
+                      type="text"
+                      placeholder="Ex: smtp.gmail.com ou smtp-relay.brevo.com"
+                      value={smtpHost}
+                      onChange={(e) => setSmtpHost(e.target.value)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="smtp-port">Porta SMTP</label>
+                    <input
+                      id="smtp-port"
+                      type="number"
+                      placeholder="587"
+                      value={smtpPort}
+                      onChange={(e) => setSmtpPort(e.target.value)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="smtp-user">Usuário SMTP</label>
+                    <input
+                      id="smtp-user"
+                      type="text"
+                      placeholder="seuemail@gmail.com"
+                      value={smtpUser}
+                      onChange={(e) => setSmtpUser(e.target.value)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="smtp-pass">
+                      Senha SMTP / App Password {settings.hasSmtpPass && <small>(já salva — vazio mantém)</small>}
+                    </label>
+                    <PasswordInput
+                      id="smtp-pass"
+                      placeholder={settings.hasSmtpPass ? '••••••••••••' : 'Senha de aplicativo SMTP'}
+                      value={smtpPass}
+                      onChange={(e) => setSmtpPass(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="field-grid">
+                  <div className="field">
+                    <label htmlFor="resend-key">
+                      Resend API Key (alternativa ao SMTP){' '}
+                      {settings.hasResendKey && <small>(já salva — vazio mantém)</small>}
+                    </label>
+                    <PasswordInput
+                      id="resend-key"
+                      placeholder={settings.hasResendKey ? '••••••••••••' : 're_xxxxxxxx...'}
+                      value={resendApiKey}
+                      onChange={(e) => setResendApiKey(e.target.value)}
+                    />
+                  </div>
+                  <div className="field" style={{ justifyContent: 'flex-end' }}>
+                    <label className="check-inline">
+                      <input
+                        type="checkbox"
+                        checked={smtpSecure}
+                        onChange={(e) => setSmtpSecure(e.target.checked)}
+                      />
+                      <span>Usar SSL/TLS direto (porta 465)</span>
+                    </label>
+                    <label className="check-inline" style={{ marginTop: 6 }}>
+                      <input
+                        type="checkbox"
+                        checked={sendSuspensionEmail}
+                        onChange={(e) => setSendSuspensionEmail(e.target.checked)}
+                      />
+                      <span>Avisar o aluno por e-mail quando o acesso for suspenso</span>
+                    </label>
+                  </div>
+                </div>
+              </fieldset>
+
+              <div className="field-row">
                 <input
-                  type="checkbox"
-                  checked={smtpSecure}
-                  onChange={(e) => setSmtpSecure(e.target.checked)}
+                  type="email"
+                  placeholder="E-mail para receber um teste agora (ex: seuemail@gmail.com)"
+                  value={testEmailDest}
+                  onChange={(e) => setTestEmailDest(e.target.value)}
                 />
-                <span>Usar SSL/TLS direto (porta 465)</span>
-              </label>
-              <label className="check-inline" style={{ marginTop: 6 }}>
-                <input
-                  type="checkbox"
-                  checked={sendSuspensionEmail}
-                  onChange={(e) => setSendSuspensionEmail(e.target.checked)}
-                />
-                <span>Avisar o aluno por e-mail quando o acesso for suspenso</span>
-              </label>
-            </div>
-          </div>
+                <button type="button" className="btn ghost" onClick={() => void sendTestMail()} disabled={testingEmail}>
+                  <Icon name="send" size={16} /> {testingEmail ? 'Enviando…' : 'Enviar e-mail de teste'}
+                </button>
+                <button type="button" className="btn ghost" onClick={scrollToEmailEditor}>
+                  <Icon name="edit" size={16} /> Editar e visualizar HTML
+                </button>
+              </div>
 
-          <div className="field-row">
-            <input
-              type="email"
-              placeholder="E-mail para receber um teste agora (ex: seuemail@gmail.com)"
-              value={testEmailDest}
-              onChange={(e) => setTestEmailDest(e.target.value)}
-            />
-            <button type="button" className="btn ghost" onClick={() => void sendTestMail()} disabled={testingEmail}>
-              <Icon name="send" size={16} /> {testingEmail ? 'Enviando…' : 'Enviar e-mail de teste'}
-            </button>
-            <button type="button" className="btn ghost" onClick={scrollToEmailEditor}>
-              <Icon name="edit" size={16} /> Editar e visualizar HTML
-            </button>
-          </div>
+              {emailErr && (
+                <p className="form-err" role="alert">
+                  {emailErr}
+                </p>
+              )}
 
-          {emailErr && (
-            <p className="form-err" role="alert">
-              {emailErr}
-            </p>
-          )}
-
-          <div className="form-actions">
-            <button type="submit" className="btn" disabled={savingSection === 'email'}>
-              <Icon name="check" size={17} />{' '}
-              {savingSection === 'email' ? 'Salvando…' : 'Salvar configurações de e-mail'}
-            </button>
-          </div>
-        </form>
+              {!emailLocked && (
+                <div className="form-actions">
+                  <button type="submit" className="btn" disabled={savingSection === 'email'}>
+                    <Icon name="check" size={17} />{' '}
+                    {savingSection === 'email' ? 'Salvando…' : 'Salvar configurações de e-mail'}
+                  </button>
+                  {emailServerSaved && (
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      onClick={() => {
+                        setEmailProvider(settings.emailProvider ?? 'auto');
+                        setSmtpHost(settings.smtpHost ?? '');
+                        setSmtpPort(String(settings.smtpPort ?? 587));
+                        setSmtpSecure(Boolean(settings.smtpSecure));
+                        setSmtpUser(settings.smtpUser ?? '');
+                        setSmtpPass('');
+                        setResendApiKey('');
+                        setEmailFromName(settings.emailFromName ?? 'CongelaFit Premium');
+                        setEmailFromAddress(settings.emailFromAddress ?? '');
+                        setSendSuspensionEmail(settings.sendSuspensionEmail !== false);
+                        setEmailServerUnlocked(false);
+                      }}
+                    >
+                      Cancelar alteração
+                    </button>
+                  )}
+                </div>
+              )}
+            </form>
+          );
+        })()}
       </div>
 
       {/* BLOCO 3B: EDITOR E PRÉVIA DO HTML DOS E-MAILS */}
